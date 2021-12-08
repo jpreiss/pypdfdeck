@@ -154,29 +154,39 @@ def main():
     info = pdf2image.pdfinfo_from_path(path)
     npages = info["Pages"]
     npages = min(npages, 5)
-    rasterizer = BlockingRasterizer(path, pagelimit=npages)
+    rasterizer_audience = BlockingRasterizer(path, pagelimit=npages)
+    rasterizer_presenter = BlockingRasterizer(path, pagelimit=npages)
 
     cursor = Cursor(npages)
     remote_fwd = False
     remote_rev = False
 
+    # TODO: Figure out the fine points of pyglet event so we don't need all
+    # this copy-paste code.
+
     @win_audience.event
     def on_resize(width, height):
-        nonlocal rasterizer
+        nonlocal rasterizer_audience
         print(f"audience resize to {width}, {height}")
-        rasterizer.push_resize(width, height)
+        rasterizer_audience.push_resize(width, height)
+
+    @win_presenter.event
+    def on_resize(width, height):
+        nonlocal rasterizer_presenter
+        print(f"presenter resize to {width}, {height}")
+        rasterizer_presenter.push_resize(width, height)
 
     @win_audience.event
     def on_draw():
         win_audience.clear()
-        rasterizer.draw(cursor.cursor)
+        rasterizer_audience.draw(cursor.cursor)
         return pyglet.event.EVENT_HANDLED
 
     @win_presenter.event
     def on_draw():
         win_presenter.clear()
         if cursor.cursor + 1 < cursor.nslides:
-            rasterizer.draw(cursor.cursor + 1)
+            rasterizer_presenter.draw(cursor.cursor + 1)
         return pyglet.event.EVENT_HANDLED
 
     def on_remote_fwd(value):
