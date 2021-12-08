@@ -90,7 +90,7 @@ def rasterize(pdfpath, width, height, progressbar=True, pagelimit=None):
             pdfpath,
             # TODO: Letterboxing. Currently leaves empty space on right if
             # screen is wider than slide, but clips if the slide is wider!
-            size=(None, height),
+            size=(width, height),
             output_folder=tempdir,
             # Do not bother loading as PIL images. Let Pyglet handle loading.
             # TODO: Try to keep everything in memory.
@@ -111,12 +111,25 @@ class BlockingRasterizer:
         self.path = path
         self.pagelimit = pagelimit
         self.images = None
+        info = pdf2image.pdfinfo_from_path(path)
+        self.aspect = parse_aspect_from_pdfinfo(info)
 
     def push_resize(self, width, height):
+        window_aspect = float(width) / height
+        if window_aspect >= self.aspect:
+            width = None
+        else:
+            height = None
         self.imgs = rasterize(self.path, width, height, self.pagelimit)
 
     def draw(self, cursor):
         self.imgs[cursor].blit(0, 0)
+
+
+def parse_aspect_from_pdfinfo(info):
+    size_str = info["Page size"]
+    width, _, height, _ = size_str.split(" ")
+    return float(width) / float(height)
 
 
 def main():
@@ -150,17 +163,18 @@ def main():
     else:
         raise RuntimeError("Don't know what to do with more than 2 screens!")
 
-    _, rasterize_height = win_audience.get_size()
-    print(f"rasterizing to h={rasterize_height}...")
+    win_dims = win_audience.get_size()
+    print(f"rasterizing to {win_dims}...")
     path = sys.argv[1]
-    rasterizer = BlockingRasterizer(path, pagelimit=5)
-    rasterizer.push_resize(None, rasterize_height)
+    info = pdf2image.pdfinfo_from_path(path)
+    npages = info["Pages"]
+    npages = min(npages, 5)
+    rasterizer = BlockingRasterizer(path, pagelimit=npages)
 
     print("...done rasterizing.")
-    cursor = Cursor(len(rasterizer.imgs))
+    cursor = Cursor(npages)
     remote_fwd = False
     remote_rev = False
-
 
     @win_audience.event
     def on_resize(width, height):
