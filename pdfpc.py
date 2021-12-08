@@ -88,8 +88,6 @@ def rasterize(pdfpath, width, height, progressbar=True, pagelimit=None):
     with tempfile.TemporaryDirectory() as tempdir:
         paths = pdf2image.convert_from_path(
             pdfpath,
-            # TODO: Letterboxing. Currently leaves empty space on right if
-            # screen is wider than slide, but clips if the slide is wider!
             size=(width, height),
             output_folder=tempdir,
             # Do not bother loading as PIL images. Let Pyglet handle loading.
@@ -100,6 +98,7 @@ def rasterize(pdfpath, width, height, progressbar=True, pagelimit=None):
         )
         if progressbar:
             paths = tqdm.tqdm(paths)
+        # TODO: Why is this so slow?
         imgs = [pyglet.image.load(p) for p in paths]
         return imgs
 
@@ -142,40 +141,21 @@ def main():
     screens = display.get_screens()
     modes = [bestmode(s) for s in screens]
 
-    if len(screens) == 1:
-        win_audience = pyglet.window.Window(
-            caption="audience",
-            resizable=True,
-        )
-        win_presenter = pyglet.window.Window(
-            caption="presenter",
-            resizable=True,
-        )
-    elif len(screens) == 2:
-        idx_macbook = [i for i, mode in modes if mode.height == 900]
-        if len(idx_macbook) == 0:
-            raise RuntimeError("MacBook not found.")
-        idx_macbook = idx_macbook[0]
-        win_presenter = pyglet.window.Window(
-            caption="presenter",
-            screen=screens[idx_macbook],
-        )
-        win_audience = pyglet.window.Window(
-            fullscreen=True,
-            screen=screens[1 - idx_macbook],
-        )
-    else:
-        raise RuntimeError("Don't know what to do with more than 2 screens!")
+    win_audience = pyglet.window.Window(
+        caption="audience",
+        resizable=True,
+    )
+    win_presenter = pyglet.window.Window(
+        caption="presenter",
+        resizable=True,
+    )
 
-    win_dims = win_audience.get_size()
-    print(f"rasterizing to {win_dims}...")
     path = sys.argv[1]
     info = pdf2image.pdfinfo_from_path(path)
     npages = info["Pages"]
     npages = min(npages, 5)
     rasterizer = BlockingRasterizer(path, pagelimit=npages)
 
-    print("...done rasterizing.")
     cursor = Cursor(npages)
     remote_fwd = False
     remote_rev = False
