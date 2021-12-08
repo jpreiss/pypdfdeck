@@ -94,12 +94,10 @@ def rasterize(pdfpath, width, height, progressbar=True, pagelimit=None):
             output_folder=tempdir,
             # Do not bother loading as PIL images. Let Pyglet handle loading.
             # TODO: Try to keep everything in memory.
+            last_page=pagelimit,
             paths_only=True,
             thread_count=4,
         )
-        # TODO: Can we do this *before* calling pdf2image?
-        if pagelimit is not None:
-            paths = paths[:pagelimit]
         if progressbar:
             paths = tqdm.tqdm(paths)
         imgs = [pyglet.image.load(p) for p in paths]
