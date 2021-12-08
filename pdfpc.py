@@ -72,13 +72,38 @@ class Cursor:
         self.nslides = nslides
 
     def tick(self, dt, reverse, forward):
+        """Returns True if the cursor changed, false otherwise."""
+        old_value = self.cursor
         # TODO: Make sure this is the right thing to do when both are held.
         if reverse and forward:
-            return
+            return False
         self.cursor -= self.rev.tick(dt, reverse)
         self.cursor += self.fwd.tick(dt, forward)
         self.cursor = min(self.cursor, self.nslides - 1)
         self.cursor = max(self.cursor, 0)
+        return self.cursor != old_value
+
+
+def rasterize(pdfpath, width, height, progressbar=True, pagelimit=None):
+    with tempfile.TemporaryDirectory() as tempdir:
+        paths = pdf2image.convert_from_path(
+            pdfpath,
+            # TODO: Letterboxing. Currently leaves empty space on right if
+            # screen is wider than slide, but clips if the slide is wider!
+            size=(None, height),
+            output_folder=tempdir,
+            # Do not bother loading as PIL images. Let Pyglet handle loading.
+            # TODO: Try to keep everything in memory.
+            paths_only=True,
+            thread_count=4,
+        )
+        # TODO: Can we do this *before* calling pdf2image?
+        if pagelimit is not None:
+            paths = paths[:pagelimit]
+        if progressbar:
+            paths = tqdm.tqdm(paths)
+        imgs = [pyglet.image.load(p) for p in paths]
+        return imgs
 
 
 def main():
@@ -108,56 +133,31 @@ def main():
 
     _, rasterize_height = win_audience.get_size()
     print(f"rasterizing to h={rasterize_height}...")
-
     path = sys.argv[1]
-    with tempfile.TemporaryDirectory() as tempdir:
-        paths = pdf2image.convert_from_path(
-            path,
-            size=(None, rasterize_height),
-            output_folder=tempdir,
-            paths_only=True,
-            thread_count=4,
-        )
-        paths = paths[:15]
-        imgs = [pyglet.image.load(path) for path in tqdm.tqdm(paths)]
+    imgs = rasterize(
+        path,
+        width=None,
+        height=rasterize_height,
+        pagelimit=15,
+    )
 
     print("...done rasterizing.")
-    cursor = Cursor(len(paths))
+    cursor = Cursor(len(imgs))
     remote_fwd = False
     remote_rev = False
 
     @win_audience.event
     def on_draw():
-        # print("audience draw")
         win_audience.clear()
         imgs[cursor.cursor].blit(0, 0)
-
-    @win_presenter.event
-    def on_draw():
-        # print("presenter draw")
-        win_presenter.clear()
-        if cursor.cursor + 1 < cursor.nslides:
-            imgs[cursor.cursor + 1].blit(0, 0)
-
-    """
-    @win_presenter.event
-    def on_key_press(symbol, modifiers):
-        nonlocal cursor
-        if symbol == pyglet.window.key.RIGHT:
-            cursor = min(nslides - 1, cursor + step)
-        elif symbol == pyglet.window.key.LEFT:
-            cursor = max(0, cursor - step)
-        win_audience.dispatch_event("on_draw")
         return pyglet.event.EVENT_HANDLED
 
     @win_presenter.event
-    def on_mouse_press(x, y, button, modifiers):
-        print("mouse", (x, y), button, modifiers)
-
-    @win_presenter.event
-    def on_mouse_scroll(x, y, scroll_x, scroll_y):
-        print("scroll", (x, y), scroll_x, scroll_y)
-    """
+    def on_draw():
+        win_presenter.clear()
+        if cursor.cursor + 1 < cursor.nslides:
+            imgs[cursor.cursor + 1].blit(0, 0)
+        return pyglet.event.EVENT_HANDLED
 
     def on_remote_fwd(value):
         nonlocal remote_fwd
@@ -173,9 +173,9 @@ def main():
         nonlocal cursor
         forward = remote_fwd or keyboard[pyglet.window.key.RIGHT]
         reverse = remote_rev or keyboard[pyglet.window.key.LEFT]
-        cursor.tick(dt, reverse, forward)
-        win_audience.dispatch_event("on_draw")
-        win_presenter.dispatch_event("on_draw")
+        if cursor.tick(dt, reverse, forward):
+            win_audience.dispatch_event("on_draw")
+            win_presenter.dispatch_event("on_draw")
 
     devices = pyglet.input.get_devices()
     remotes = [d for d in devices if d.name == "USB Receiver"]
