@@ -106,6 +106,19 @@ def rasterize(pdfpath, width, height, progressbar=True, pagelimit=None):
         return imgs
 
 
+class BlockingRasterizer:
+    def __init__(self, path, pagelimit=None):
+        self.path = path
+        self.pagelimit = pagelimit
+        self.images = None
+
+    def push_resize(self, width, height):
+        self.imgs = rasterize(self.path, width, height, self.pagelimit)
+
+    def draw(self, cursor):
+        self.imgs[cursor].blit(0, 0)
+
+
 def main():
 
     display = pyglet.canvas.get_display()
@@ -113,8 +126,14 @@ def main():
     modes = [bestmode(s) for s in screens]
 
     if len(screens) == 1:
-        win_audience = pyglet.window.Window(caption="audience", width=1400, height=800)
-        win_presenter = pyglet.window.Window(caption="presenter")
+        win_audience = pyglet.window.Window(
+            caption="audience",
+            resizable=True,
+        )
+        win_presenter = pyglet.window.Window(
+            caption="presenter",
+            resizable=True,
+        )
     elif len(screens) == 2:
         idx_macbook = [i for i, mode in modes if mode.height == 900]
         if len(idx_macbook) == 0:
@@ -134,29 +153,32 @@ def main():
     _, rasterize_height = win_audience.get_size()
     print(f"rasterizing to h={rasterize_height}...")
     path = sys.argv[1]
-    imgs = rasterize(
-        path,
-        width=None,
-        height=rasterize_height,
-        pagelimit=15,
-    )
+    rasterizer = BlockingRasterizer(path, pagelimit=5)
+    rasterizer.push_resize(None, rasterize_height)
 
     print("...done rasterizing.")
-    cursor = Cursor(len(imgs))
+    cursor = Cursor(len(rasterizer.imgs))
     remote_fwd = False
     remote_rev = False
+
+
+    @win_audience.event
+    def on_resize(width, height):
+        nonlocal rasterizer
+        print(f"audience resize to {width}, {height}")
+        rasterizer.push_resize(width, height)
 
     @win_audience.event
     def on_draw():
         win_audience.clear()
-        imgs[cursor.cursor].blit(0, 0)
+        rasterizer.draw(cursor.cursor)
         return pyglet.event.EVENT_HANDLED
 
     @win_presenter.event
     def on_draw():
         win_presenter.clear()
         if cursor.cursor + 1 < cursor.nslides:
-            imgs[cursor.cursor + 1].blit(0, 0)
+            rasterizer.draw(cursor.cursor + 1)
         return pyglet.event.EVENT_HANDLED
 
     def on_remote_fwd(value):
