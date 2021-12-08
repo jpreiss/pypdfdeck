@@ -113,8 +113,10 @@ class BlockingRasterizer:
         self.images = None
         info = pdf2image.pdfinfo_from_path(path)
         self.aspect = parse_aspect_from_pdfinfo(info)
+        self.window_size = None
 
     def push_resize(self, width, height):
+        self.window_size = (width, height)
         window_aspect = float(width) / height
         if window_aspect >= self.aspect:
             width = None
@@ -123,7 +125,11 @@ class BlockingRasterizer:
         self.imgs = rasterize(self.path, width, height, self.pagelimit)
 
     def draw(self, cursor):
-        self.imgs[cursor].blit(0, 0)
+        w, h = self.window_size
+        dx = (w - self.imgs[0].width) // 2
+        dy = (h - self.imgs[0].height) // 2
+        assert (dx == 0) or (dy == 0)
+        self.imgs[cursor].blit(dx, dy)
 
 
 def parse_aspect_from_pdfinfo(info):
