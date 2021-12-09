@@ -1,6 +1,8 @@
 from copy import deepcopy
+import multiprocessing
 import sys
 import tempfile
+import threading
 
 import pdf2image
 import pyglet
@@ -107,26 +109,44 @@ class BlockingRasterizer:
     def __init__(self, path, pagelimit=None):
         self.path = path
         self.pagelimit = pagelimit
-        self.images = None
+        self.imgs = None
         info = pdf2image.pdfinfo_from_path(path)
         self.aspect = parse_aspect_from_pdfinfo(info)
         self.window_size = None
+        self.queue = multiprocessing.Queue()
+        #self.process = multiprocessing.Process(target=self.worker, args=(self.queue,))
+        self.process = threading.Thread(target=self.worker, args=(self.queue,))
+        self.process.start()
+        print("started the process")
 
     def push_resize(self, width, height):
-        self.window_size = (width, height)
-        window_aspect = float(width) / height
-        if window_aspect >= self.aspect:
-            width = None
-        else:
-            height = None
-        self.imgs = rasterize(self.path, width, height, self.pagelimit)
+        self.queue.put((width, height))
 
     def draw(self, cursor):
+        if self.imgs is None:
+            return
         w, h = self.window_size
         dx = (w - self.imgs[0].width) // 2
         dy = (h - self.imgs[0].height) // 2
-        assert (dx == 0) or (dy == 0)
+        # TODO: Get rid of 1-pixel slop.
+        assert (dx <= 1) or (dy <= 1)
         self.imgs[cursor].blit(dx, dy)
+
+    def worker(self, queue):
+        while True:
+            size = queue.get()
+            while not queue.empty():
+                size = queue.get()
+            print("doing rasterization!")
+            width, height = size
+            window_aspect = float(width) / height
+            if window_aspect >= self.aspect:
+                width = None
+            else:
+                height = None
+            self.imgs = rasterize(self.path, width, height, self.pagelimit)
+            self.window_size = size
+            print("Finished a rasterization.")
 
 
 def parse_aspect_from_pdfinfo(info):
