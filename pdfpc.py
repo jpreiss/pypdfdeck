@@ -246,30 +246,30 @@ def main():
     # TODO: Figure out the fine points of pyglet event so we don't need all
     # this copy-paste code.
 
-    @win_audience.event
-    def on_resize(width, height):
+    def on_resize_audience(width, height):
         nonlocal rasterizer_audience
         print(f"audience resize to {width}, {height}")
         rasterizer_audience.push_resize(width, height)
+    win_audience.set_handler("on_resize", on_resize_audience)
 
-    @win_presenter.event
-    def on_resize(width, height):
+    def on_resize_presenter(width, height):
         nonlocal rasterizer_presenter
         print(f"presenter resize to {width}, {height}")
         rasterizer_presenter.push_resize(width, height)
+    win_presenter.set_handler("on_resize", on_resize_presenter)
 
-    @win_audience.event
-    def on_draw():
+    def on_draw_audience():
         win_audience.clear()
         rasterizer_audience.draw(cursor.cursor)
         return pyglet.event.EVENT_HANDLED
+    win_audience.set_handler("on_draw", on_draw_audience)
 
-    @win_presenter.event
-    def on_draw():
+    def on_draw_presenter():
         win_presenter.clear()
         if cursor.cursor + 1 < cursor.nslides:
             rasterizer_presenter.draw(cursor.cursor + 1)
         return pyglet.event.EVENT_HANDLED
+    win_presenter.set_handler("on_draw", on_draw_presenter)
 
     def on_tick(dt, keyboard):
         nonlocal cursor
@@ -281,6 +281,7 @@ def main():
 
     keyboard = pyglet.window.key.KeyStateHandler()
     win_presenter.push_handlers(keyboard)
+    win_audience.push_handlers(keyboard)
     pyglet.clock.schedule_interval(on_tick, 0.05, keyboard=keyboard)
 
     # Main loop.
