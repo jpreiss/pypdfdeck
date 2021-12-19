@@ -20,6 +20,17 @@ UP = 0
 HOLD = 1
 FIRE = 2
 
+KEYS_FWD = [
+    pyglet.window.key.RIGHT,
+    pyglet.window.key.UP,
+    pyglet.window.key.PAGEDOWN,
+]
+KEYS_REV = [
+    pyglet.window.key.LEFT,
+    pyglet.window.key.DOWN,
+    pyglet.window.key.PAGEUP,
+]
+
 class Repeater:
     """Implements repeat-after-hold, similar to OS keyboard repeating."""
     def __init__(self):
@@ -219,8 +230,6 @@ def main():
     rasterizer_presenter = BlockingRasterizer(path, pagelimit=npages)
 
     cursor = Cursor(npages)
-    remote_fwd = False
-    remote_rev = False
 
     # TODO: Figure out the fine points of pyglet event so we don't need all
     # this copy-paste code.
@@ -250,34 +259,13 @@ def main():
             rasterizer_presenter.draw(cursor.cursor + 1)
         return pyglet.event.EVENT_HANDLED
 
-    def on_remote_fwd(value):
-        nonlocal remote_fwd
-        remote_fwd = value
-        return pyglet.event.EVENT_HANDLED
-
-    def on_remote_rev(value):
-        nonlocal remote_rev
-        remote_rev = value
-        return pyglet.event.EVENT_HANDLED
-
     def on_tick(dt, keyboard):
         nonlocal cursor
-        forward = remote_fwd or keyboard[pyglet.window.key.RIGHT]
-        reverse = remote_rev or keyboard[pyglet.window.key.LEFT]
+        forward = any(keyboard[k] for k in KEYS_FWD)
+        reverse = any(keyboard[k] for k in KEYS_REV)
         if cursor.tick(dt, reverse, forward):
             win_audience.dispatch_event("on_draw")
             win_presenter.dispatch_event("on_draw")
-
-    devices = pyglet.input.get_devices()
-    remotes = [d for d in devices if d.name == "USB Receiver"]
-    # TODO: Document / justify.
-    for i, r in enumerate(remotes):
-        r.open()
-        for c in r.get_controls():
-            if c.raw_name == "0x7:4b":
-                c.on_change = on_remote_rev
-            if c.raw_name == "0x7:4e":
-                c.on_change = on_remote_fwd
 
     keyboard = pyglet.window.key.KeyStateHandler()
     win_presenter.push_handlers(keyboard)
