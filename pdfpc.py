@@ -217,6 +217,27 @@ def parse_aspect_from_pdfinfo(info):
     return float(width) / float(height)
 
 
+class Window:
+    def __init__(self, name, pdfpath, cursor, offset):
+        self.name = name
+        self.cursor = cursor
+        self.offset = offset
+        self.rasterizer = ThreadedRasterizer(pdfpath, pagelimit=cursor.nslides)
+        self.window = pyglet.window.Window(caption=name, resizable=True)
+        self.window.set_handler("on_resize", self.on_resize)
+        self.window.set_handler("on_draw", self.on_draw)
+
+    def on_resize(self, width, height):
+        self.rasterizer.push_resize(width, height)
+
+    def on_draw(self):
+        self.window.clear()
+        index = self.cursor.cursor + self.offset
+        if index >= 0 and index < self.cursor.nslides:
+            self.rasterizer.draw(index)
+        return pyglet.event.EVENT_HANDLED
+
+
 def main():
 
     display = pyglet.canvas.get_display()
@@ -224,67 +245,30 @@ def main():
     # TODO: Uncomment when implementing fullscreen.
     # modes = [bestmode(s) for s in screens]
 
-    win_audience = pyglet.window.Window(
-        caption="audience",
-        resizable=True,
-    )
-    win_presenter = pyglet.window.Window(
-        caption="presenter",
-        resizable=True,
-    )
-
     path = sys.argv[1]
     info = pdf2image.pdfinfo_from_path(path)
     npages = info["Pages"]
     npages = min(npages, 5)
-    rasterizer_audience = ThreadedRasterizer(path, pagelimit=npages)
-    rasterizer_presenter = ThreadedRasterizer(path, pagelimit=npages)
 
     cursor = Cursor(npages)
-
-    # TODO: Figure out the fine points of pyglet event so we don't need all
-    # this copy-paste code.
-
-    def on_resize_audience(width, height):
-        nonlocal rasterizer_audience
-        print(f"audience resize to {width}, {height}")
-        rasterizer_audience.push_resize(width, height)
-    win_audience.set_handler("on_resize", on_resize_audience)
-
-    def on_resize_presenter(width, height):
-        nonlocal rasterizer_presenter
-        print(f"presenter resize to {width}, {height}")
-        rasterizer_presenter.push_resize(width, height)
-    win_presenter.set_handler("on_resize", on_resize_presenter)
-
-    def on_draw_audience():
-        win_audience.clear()
-        rasterizer_audience.draw(cursor.cursor)
-        return pyglet.event.EVENT_HANDLED
-    win_audience.set_handler("on_draw", on_draw_audience)
-
-    def on_draw_presenter():
-        win_presenter.clear()
-        if cursor.cursor + 1 < cursor.nslides:
-            rasterizer_presenter.draw(cursor.cursor + 1)
-        return pyglet.event.EVENT_HANDLED
-    win_presenter.set_handler("on_draw", on_draw_presenter)
+    presenter = Window("presenter", path, cursor, offset=1)
+    audience = Window("audience", path, cursor, offset=0)
 
     def on_tick(dt, keyboard):
         nonlocal cursor
         forward = any(keyboard[k] for k in KEYS_FWD)
         reverse = any(keyboard[k] for k in KEYS_REV)
         if cursor.tick(dt, reverse, forward):
-            win_audience.dispatch_event("on_draw")
-            win_presenter.dispatch_event("on_draw")
+            presenter.window.dispatch_event("on_draw")
+            audience.window.dispatch_event("on_draw")
 
     keyboard = pyglet.window.key.KeyStateHandler()
-    win_presenter.push_handlers(keyboard)
-    win_audience.push_handlers(keyboard)
+    presenter.window.push_handlers(keyboard)
+    audience.window.push_handlers(keyboard)
     pyglet.clock.schedule_interval(on_tick, 0.05, keyboard=keyboard)
 
     # Main loop.
-    win_presenter.activate()
+    presenter.window.activate()
     pyglet.app.run()
 
 
