@@ -97,25 +97,6 @@ class Cursor:
         return self.cursor != old_value
 
 
-def rasterize(pdfpath, width, height, progressbar=True, pagelimit=None):
-    with tempfile.TemporaryDirectory() as tempdir:
-        paths = pdf2image.convert_from_path(
-            pdfpath,
-            size=(width, height),
-            output_folder=tempdir,
-            # Do not bother loading as PIL images. Let Pyglet handle loading.
-            # TODO: Try to keep everything in memory.
-            last_page=pagelimit,
-            paths_only=True,
-            thread_count=4,
-        )
-        if progressbar:
-            paths = tqdm.tqdm(paths)
-        # TODO: Why is this so slow?
-        imgs = [pyglet.image.load(p) for p in paths]
-        return imgs
-
-
 def winsize2rasterargs(window_size, aspect):
     width, height = window_size
     window_aspect = float(width) / height
