@@ -172,7 +172,7 @@ class ThreadedRasterizer:
     """Shared state for communicating with rasterize_worker thread."""
     def __init__(self, path, pagelimit=None):
         self.images = None
-        self.active_image = None
+        self.textures = [None] * pagelimit
         self.window_size = None
 
         self.queue = multiprocessing.Queue()
@@ -185,8 +185,10 @@ class ThreadedRasterizer:
         self.thread.start()
 
     def images_done(self, images, window_size):
+        # Defer converting PIL to Pyglet to the GUI thread, otherwise weird
+        # things happen with Pyglet deleting textures that are still in use.
         with self.lock:
-            self.images = [PIL2pyglet(img) for img in images]
+            self.images = images
             self.window_size = window_size
 
     def push_resize(self, width, height):
@@ -197,19 +199,16 @@ class ThreadedRasterizer:
             if self.images is None:
                 return
             w, h = self.window_size
-            # If we store this pyglet image reference in a local variable
-            # instead of a member of self, and self.images is later overwritten
-            # by the rasterizer thread, we get segfaults when trying to blit
-            # the image. Possibly the local variables in this event handler do
-            # not contribute to the object reference count - see
-            # https://pyglet.readthedocs.io/en/latest/modules/event.html#dispatching-events.
-            # TODO: Understand more completely.
-            self.active_image = self.images[cursor]
-        dx = (w - self.active_image.width) // 2
-        dy = (h - self.active_image.height) // 2
+            image = self.images[cursor]
+        tex = self.textures[cursor]
+        if tex is None or (tex.width, tex.height) != (w, h):
+            tex = PIL2pyglet(image).get_texture()
+            self.textures[cursor] = tex
+        dx = (w - tex.width) // 2
+        dy = (h - tex.height) // 2
         # TODO: Get rid of 1-pixel slop.
         assert (dx <= 1) or (dy <= 1)
-        self.active_image.blit(dx, dy)
+        tex.blit(dx, dy)
 
 
 def parse_aspect_from_pdfinfo(info):
