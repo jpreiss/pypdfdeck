@@ -166,7 +166,7 @@ def rasterize_worker(pdfpath, pagelimit, size_queue, callback):
                 page += 1
 
 
-class BlockingRasterizer:
+class ThreadedRasterizer:
     def __init__(self, path, pagelimit=None):
         self.path = path
         self.pagelimit = pagelimit
@@ -226,8 +226,8 @@ def main():
     info = pdf2image.pdfinfo_from_path(path)
     npages = info["Pages"]
     npages = min(npages, 5)
-    rasterizer_audience = BlockingRasterizer(path, pagelimit=npages)
-    rasterizer_presenter = BlockingRasterizer(path, pagelimit=npages)
+    rasterizer_audience = ThreadedRasterizer(path, pagelimit=npages)
+    rasterizer_presenter = ThreadedRasterizer(path, pagelimit=npages)
 
     cursor = Cursor(npages)
 
