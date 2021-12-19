@@ -108,10 +108,28 @@ def winsize2rasterargs(window_size, aspect):
 
 
 def rasterize_worker(pdfpath, pagelimit, size_queue, callback):
+    """Threaded interruptible PDF rasterizer.
+
+    Listens on size_queue for (width, height) tuples representing window resize
+    events. When an event arrives, discards any in-progress rasterization and
+    starts over. Calls the callback on its own thread when the images for the
+    entire PDF are complete and the size has not changed during rasterization.
+
+    Args:
+        pdfpath (str): Path of PDF file.
+        pagelimit (int): Read this many pages from the file. (Mostly for
+            development purposes to keep load time down.)
+        size_queue (queue-like): Queue to monitor for size changes.
+        callback (fn void(list of PIL images)): Function to call when the full
+            PDF is ready.
+    """
     info = pdf2image.pdfinfo_from_path(pdfpath)
     aspect = parse_aspect_from_pdfinfo(info)
+    # The (one-based) index of the page we are to rasterize next. If it exceeds
+    # page_limit, we have no work to do.
     page = 1
     images = [None] * pagelimit
+    # Block indefinitely for first size.
     window_size = size_queue.get()
     image_size = winsize2rasterargs(window_size, aspect)
     while True:
