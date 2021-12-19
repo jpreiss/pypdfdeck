@@ -105,48 +105,89 @@ def rasterize(pdfpath, width, height, progressbar=True, pagelimit=None):
         return imgs
 
 
+def winsize2rasterargs(window_size, aspect):
+    width, height = window_size
+    window_aspect = float(width) / height
+    if window_aspect >= aspect:
+        width = None
+    else:
+        height = None
+    return (width, height)
+
+
+def rasterize_worker(pdfpath, pagelimit, size_queue, callback):
+    info = pdf2image.pdfinfo_from_path(pdfpath)
+    aspect = parse_aspect_from_pdfinfo(info)
+    page = 1
+    images = [None] * pagelimit
+    window_size = size_queue.get()
+    image_size = winsize2rasterargs(window_size, aspect)
+    while True:
+        while not size_queue.empty():
+            # Start over!
+            window_size = size_queue.get()
+            image_size = winsize2rasterargs(window_size, aspect)
+            page = 1
+        if page == pagelimit + 1:
+            # Got through them all without changing size.
+            if images[-1] is not None:
+                images2 = images
+                images = [None] * pagelimit
+                callback(images2, window_size)
+            else:
+                # Already callbacked and no new resize events since.
+                pass
+        else:
+            with tempfile.TemporaryDirectory() as tempdir:
+                paths = pdf2image.convert_from_path(
+                    pdfpath,
+                    size=image_size,
+                    output_folder=tempdir,
+                    # Do not bother loading as PIL images. Let Pyglet handle loading.
+                    # TODO: Try to keep everything in memory.
+                    first_page=page,
+                    last_page=page,
+                    paths_only=True,
+                )
+                assert len(paths) == 1
+                # TODO: Why is pyglet's image loading so slow?
+                images[page - 1] = [pyglet.image.load(p) for p in paths][0]
+                page += 1
+
+
 class BlockingRasterizer:
     def __init__(self, path, pagelimit=None):
         self.path = path
         self.pagelimit = pagelimit
-        self.imgs = None
-        info = pdf2image.pdfinfo_from_path(path)
-        self.aspect = parse_aspect_from_pdfinfo(info)
+        self.images = None
         self.window_size = None
         self.queue = multiprocessing.Queue()
-        #self.process = multiprocessing.Process(target=self.worker, args=(self.queue,))
-        self.process = threading.Thread(target=self.worker, args=(self.queue,))
-        self.process.start()
-        print("started the process")
+        self.thread = threading.Thread(
+            target=rasterize_worker,
+            args=(path, pagelimit, self.queue, self.images_done),
+        )
+        self.lock = threading.Lock()
+        self.thread.start()
+
+    def images_done(self, images, window_size):
+        with self.lock:
+            self.images = images
+            self.window_size = window_size
 
     def push_resize(self, width, height):
         self.queue.put((width, height))
 
     def draw(self, cursor):
-        if self.imgs is None:
-            return
-        w, h = self.window_size
-        dx = (w - self.imgs[0].width) // 2
-        dy = (h - self.imgs[0].height) // 2
+        with self.lock:
+            if self.images is None:
+                return
+            w, h = self.window_size
+            image = self.images[cursor]
+        dx = (w - image.width) // 2
+        dy = (h - image.height) // 2
         # TODO: Get rid of 1-pixel slop.
         assert (dx <= 1) or (dy <= 1)
-        self.imgs[cursor].blit(dx, dy)
-
-    def worker(self, queue):
-        while True:
-            size = queue.get()
-            while not queue.empty():
-                size = queue.get()
-            print("doing rasterization!")
-            width, height = size
-            window_aspect = float(width) / height
-            if window_aspect >= self.aspect:
-                width = None
-            else:
-                height = None
-            self.imgs = rasterize(self.path, width, height, self.pagelimit)
-            self.window_size = size
-            print("Finished a rasterization.")
+        image.blit(dx, dy)
 
 
 def parse_aspect_from_pdfinfo(info):
