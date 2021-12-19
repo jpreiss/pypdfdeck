@@ -149,20 +149,25 @@ def rasterize_worker(pdfpath, pagelimit, size_queue, callback):
                 pass
         else:
             with tempfile.TemporaryDirectory() as tempdir:
-                paths = pdf2image.convert_from_path(
+                # TODO: Try to keep everything in memory.
+                image = pdf2image.convert_from_path(
                     pdfpath,
                     size=image_size,
-                    output_folder=tempdir,
-                    # Do not bother loading as PIL images. Let Pyglet handle loading.
-                    # TODO: Try to keep everything in memory.
                     first_page=page,
                     last_page=page,
-                    paths_only=True,
                 )
-                assert len(paths) == 1
-                # TODO: Why is pyglet's image loading so slow?
-                images[page - 1] = [pyglet.image.load(p) for p in paths][0]
+                assert len(image) == 1
+                images[page - 1] = image[0]
                 page += 1
+
+
+def PIL2pyglet(image):
+    """Converts a PIL image from rasterize_worker into a Pyglet image."""
+    raw = image.tobytes()
+    # Returns ImageData instead of Texture so we lazily load slides onto GPU.
+    image = pyglet.image.ImageData(
+        image.width, image.height, "RGB", raw, pitch=-image.width * 3)
+    return image
 
 
 class ThreadedRasterizer:
@@ -178,10 +183,11 @@ class ThreadedRasterizer:
         )
         self.lock = threading.Lock()
         self.thread.start()
+        self.active_image = None
 
     def images_done(self, images, window_size):
         with self.lock:
-            self.images = images
+            self.images = [PIL2pyglet(img) for img in images]
             self.window_size = window_size
 
     def push_resize(self, width, height):
@@ -192,12 +198,19 @@ class ThreadedRasterizer:
             if self.images is None:
                 return
             w, h = self.window_size
-            image = self.images[cursor]
-        dx = (w - image.width) // 2
-        dy = (h - image.height) // 2
+            # If we store this pyglet image reference in a local variable
+            # instead of a member of self, and self.images is later overwritten
+            # by the rasterizer thread, we get segfaults when trying to blit
+            # the image. Possibly the local variables in this event handler do
+            # not contribute to the object reference count - see
+            # https://pyglet.readthedocs.io/en/latest/modules/event.html#dispatching-events.
+            # TODO: Understand more completely.
+            self.active_image = self.images[cursor]
+        dx = (w - self.active_image.width) // 2
+        dy = (h - self.active_image.height) // 2
         # TODO: Get rid of 1-pixel slop.
         assert (dx <= 1) or (dy <= 1)
-        image.blit(dx, dy)
+        self.active_image.blit(dx, dy)
 
 
 def parse_aspect_from_pdfinfo(info):
