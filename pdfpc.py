@@ -1,4 +1,3 @@
-from copy import deepcopy
 import multiprocessing
 import sys
 import tempfile
@@ -6,7 +5,6 @@ import threading
 
 import pdf2image
 import pyglet
-import tqdm
 
 
 def bestmode(screen):
@@ -171,19 +169,20 @@ def PIL2pyglet(image):
 
 
 class ThreadedRasterizer:
+    """Shared state for communicating with rasterize_worker thread."""
     def __init__(self, path, pagelimit=None):
-        self.path = path
-        self.pagelimit = pagelimit
         self.images = None
+        self.active_image = None
         self.window_size = None
+
         self.queue = multiprocessing.Queue()
         self.thread = threading.Thread(
             target=rasterize_worker,
             args=(path, pagelimit, self.queue, self.images_done),
         )
         self.lock = threading.Lock()
+
         self.thread.start()
-        self.active_image = None
 
     def images_done(self, images, window_size):
         with self.lock:
@@ -223,7 +222,8 @@ def main():
 
     display = pyglet.canvas.get_display()
     screens = display.get_screens()
-    modes = [bestmode(s) for s in screens]
+    # TODO: Uncomment when implementing fullscreen.
+    # modes = [bestmode(s) for s in screens]
 
     win_audience = pyglet.window.Window(
         caption="audience",
