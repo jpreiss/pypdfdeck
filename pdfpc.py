@@ -23,12 +23,22 @@ KEYS_REV = [
 ]
 
 
+def PIL2pyglet(image):
+    """Converts a PIL image from _rasterize_worker into a Pyglet image."""
+    raw = image.tobytes()
+    # Returns ImageData instead of Texture so we lazily load slides onto GPU.
+    image = pyglet.image.ImageData(
+        image.width, image.height, "RGB", raw, pitch=-image.width * 3)
+    return image
+
+
 class Window:
     def __init__(self, name, pdfpath, cursor, offset):
         self.name = name
         self.cursor = cursor
         self.offset = offset
         self.rasterizer = ThreadedRasterizer(pdfpath, pagelimit=cursor.nslides)
+        self.textures = [None] * cursor.nslides
         self.window = pyglet.window.Window(caption=name, resizable=True)
         self.window.set_handler("on_resize", self.on_resize)
         self.window.set_handler("on_draw", self.on_draw)
@@ -38,9 +48,24 @@ class Window:
 
     def on_draw(self):
         self.window.clear()
+
         index = self.cursor.cursor + self.offset
-        if index >= 0 and index < self.cursor.nslides:
-            self.rasterizer.draw(index)
+        if index < 0 or index >= self.cursor.nslides:
+            return pyglet.event.EVENT_HANDLED
+
+        image, (w, h) = self.rasterizer.get(index)
+        if image is None:
+            return pyglet.event.EVENT_HANDLED
+
+        tex = self.textures[index]
+        if tex is None or (tex.width, tex.height) != (w, h):
+            tex = PIL2pyglet(image).get_texture()
+            self.textures[index] = tex
+        dx = (w - tex.width) // 2
+        dy = (h - tex.height) // 2
+        # TODO: Get rid of 1-pixel slop.
+        assert (dx <= 1) or (dy <= 1)
+        tex.blit(dx, dy)
         return pyglet.event.EVENT_HANDLED
 
 

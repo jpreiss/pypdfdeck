@@ -5,7 +5,6 @@ import tempfile
 import threading
 
 import pdf2image
-import pyglet
 
 
 def _winsize2rasterargs(window_size, aspect):
@@ -72,20 +71,10 @@ def _rasterize_worker(pdfpath, pagelimit, size_queue, callback):
                 page += 1
 
 
-def _PIL2pyglet(image):
-    """Converts a PIL image from _rasterize_worker into a Pyglet image."""
-    raw = image.tobytes()
-    # Returns ImageData instead of Texture so we lazily load slides onto GPU.
-    image = pyglet.image.ImageData(
-        image.width, image.height, "RGB", raw, pitch=-image.width * 3)
-    return image
-
-
 class ThreadedRasterizer:
     """Shared state for communicating with _rasterize_worker thread."""
     def __init__(self, path, pagelimit=None):
         self.images = None
-        self.textures = [None] * pagelimit
         self.window_size = None
 
         self.queue = multiprocessing.Queue()
@@ -107,21 +96,11 @@ class ThreadedRasterizer:
     def push_resize(self, width, height):
         self.queue.put((width, height))
 
-    def draw(self, cursor):
+    def get(self, index):
         with self.lock:
             if self.images is None:
-                return
-            w, h = self.window_size
-            image = self.images[cursor]
-        tex = self.textures[cursor]
-        if tex is None or (tex.width, tex.height) != (w, h):
-            tex = _PIL2pyglet(image).get_texture()
-            self.textures[cursor] = tex
-        dx = (w - tex.width) // 2
-        dy = (h - tex.height) // 2
-        # TODO: Get rid of 1-pixel slop.
-        assert (dx <= 1) or (dy <= 1)
-        tex.blit(dx, dy)
+                return None, (None, None)
+            return self.images[index], self.window_size
 
 
 def _parse_aspect_from_pdfinfo(info):
