@@ -1,7 +1,6 @@
 """Threaded interruptible PDF rasterizer."""
 
 import multiprocessing
-import tempfile
 import threading
 
 import pdf2image
@@ -58,17 +57,16 @@ def _rasterize_worker(pdfpath, pagelimit, size_queue, callback):
                 # Already callbacked and no new resize events since.
                 pass
         else:
-            with tempfile.TemporaryDirectory() as tempdir:
-                # TODO: Try to keep everything in memory.
-                image = pdf2image.convert_from_path(
-                    pdfpath,
-                    size=image_size,
-                    first_page=page,
-                    last_page=page,
-                )
-                assert len(image) == 1
-                images[page - 1] = image[0]
-                page += 1
+            # TODO: Try to keep everything in memory.
+            image = pdf2image.convert_from_path(
+                pdfpath,
+                size=image_size,
+                first_page=page,
+                last_page=page,
+            )
+            assert len(image) == 1
+            images[page - 1] = image[0]
+            page += 1
 
 
 class ThreadedRasterizer:
