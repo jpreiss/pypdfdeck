@@ -77,7 +77,6 @@ def main():
     path = sys.argv[1]
     info = pdf2image.pdfinfo_from_path(path)
     npages = info["Pages"]
-    npages = min(npages, 5)
 
     cursor = Cursor(npages)
     presenter = Window("presenter", path, cursor, offset=1)
