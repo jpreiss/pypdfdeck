@@ -41,6 +41,7 @@ def _rasterize_worker(pdfpath, pagelimit, size_queue, callback):
     # Block indefinitely for first size.
     window_size = size_queue.get()
     image_size = _winsize2rasterargs(window_size, aspect)
+    CHUNK = 4
     while True:
         while not size_queue.empty():
             # Start over!
@@ -59,16 +60,18 @@ def _rasterize_worker(pdfpath, pagelimit, size_queue, callback):
                 # Already callbacked and no new resize events since.
                 pass
         else:
-            # TODO: Try to keep everything in memory.
-            image = pdf2image.convert_from_path(
+            # pdf2image convert_from_bytes just writes to a file, so it's
+            # useless for performance.
+            chunk = pdf2image.convert_from_path(
                 pdfpath,
+                thread_count=CHUNK,
                 size=image_size,
                 first_page=page,
-                last_page=page,
+                last_page=page+CHUNK-1,
             )
-            assert len(image) == 1
-            images[page - 1] = image[0]
-            page += 1
+            for i, img in enumerate(chunk):
+                images[page - 1] = img
+                page += 1
 
 
 class ThreadedRasterizer:
