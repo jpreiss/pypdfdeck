@@ -24,12 +24,11 @@ KEYS_REV = [
 
 
 def PIL2pyglet(image):
-    """Converts a PIL image from _rasterize_worker into a Pyglet image."""
+    """Converts a PIL image from the rasterizer into a Pyglet image."""
     raw = image.tobytes()
-    # Returns ImageData instead of Texture so we lazily load slides onto GPU.
     image = pyglet.image.ImageData(
         image.width, image.height, "RGB", raw, pitch=-image.width * 3)
-    return image
+    return image.get_texture()
 
 
 class Window:
@@ -59,7 +58,7 @@ class Window:
 
         tex = self.textures[index]
         if tex is None or (tex.width, tex.height) != image.size:
-            tex = PIL2pyglet(image).get_texture()
+            tex = PIL2pyglet(image)
             self.textures[index] = tex
 
         dx = (self.window.width - tex.width) // 2
