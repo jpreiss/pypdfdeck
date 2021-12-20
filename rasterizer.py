@@ -2,6 +2,7 @@
 
 import multiprocessing
 import threading
+import queue
 
 import pdf2image
 
@@ -41,15 +42,20 @@ def _rasterize_worker(pdfpath, pagelimit, size_queue, callback):
     # Block indefinitely for first size.
     window_size = size_queue.get()
     image_size = _winsize2rasterargs(window_size, aspect)
-    CHUNK = 4
+    CHUNK = 32
     while True:
-        while not size_queue.empty():
-            # Start over!
-            window_size = size_queue.get()
-            if window_size is None:
-                return
-            image_size = _winsize2rasterargs(window_size, aspect)
-            page = 1
+        # Get freshest item in queue. This loop would not be necessary if it
+        # was possible for a Queue with a maxsize to discard old items instead
+        # of blocking when it's full and put() is called.
+        try:
+            while True:
+                window_size = size_queue.get(timeout=0.1)
+                if window_size is None:
+                    return
+                image_size = _winsize2rasterargs(window_size, aspect)
+                page = 1
+        except queue.Empty:
+            pass
         if page == pagelimit + 1:
             # Got through them all without changing size.
             if images[-1] is not None:
@@ -64,7 +70,7 @@ def _rasterize_worker(pdfpath, pagelimit, size_queue, callback):
             # useless for performance.
             chunk = pdf2image.convert_from_path(
                 pdfpath,
-                thread_count=CHUNK,
+                thread_count=min(CHUNK, 8),
                 size=image_size,
                 first_page=page,
                 last_page=page+CHUNK-1,
