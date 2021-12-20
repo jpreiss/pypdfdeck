@@ -45,6 +45,8 @@ def _rasterize_worker(pdfpath, pagelimit, size_queue, callback):
         while not size_queue.empty():
             # Start over!
             window_size = size_queue.get()
+            if window_size is None:
+                return
             image_size = _winsize2rasterargs(window_size, aspect)
             page = 1
         if page == pagelimit + 1:
@@ -97,6 +99,10 @@ class ThreadedRasterizer:
             if self.images is None:
                 return None
             return self.images[index]
+
+    def shutdown(self):
+        self.queue.put(None)
+        self.thread.join()
 
 
 def _parse_aspect_from_pdfinfo(info):

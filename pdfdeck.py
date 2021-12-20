@@ -41,6 +41,7 @@ class Window:
         self.window = pyglet.window.Window(caption=name, resizable=True)
         self.window.set_handler("on_resize", self.on_resize)
         self.window.set_handler("on_draw", self.on_draw)
+        self.window.set_handler("on_close", self.on_close)
 
     def on_resize(self, width, height):
         self.rasterizer.push_resize(width, height)
@@ -65,6 +66,9 @@ class Window:
         dy = (self.window.height - tex.height) // 2
         tex.blit(dx, dy)
         return pyglet.event.EVENT_HANDLED
+
+    def on_close(self):
+        self.rasterizer.shutdown()
 
 
 def main():
