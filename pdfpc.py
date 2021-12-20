@@ -53,18 +53,17 @@ class Window:
         if index < 0 or index >= self.cursor.nslides:
             return pyglet.event.EVENT_HANDLED
 
-        image, (w, h) = self.rasterizer.get(index)
+        image = self.rasterizer.get(index)
         if image is None:
             return pyglet.event.EVENT_HANDLED
 
         tex = self.textures[index]
-        if tex is None or (tex.width, tex.height) != (w, h):
+        if tex is None or (tex.width, tex.height) != image.size:
             tex = PIL2pyglet(image).get_texture()
             self.textures[index] = tex
-        dx = (w - tex.width) // 2
-        dy = (h - tex.height) // 2
-        # TODO: Get rid of 1-pixel slop.
-        assert (dx <= 1) or (dy <= 1)
+
+        dx = (self.window.width - tex.width) // 2
+        dy = (self.window.height - tex.height) // 2
         tex.blit(dx, dy)
         return pyglet.event.EVENT_HANDLED
 

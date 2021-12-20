@@ -52,7 +52,7 @@ def _rasterize_worker(pdfpath, pagelimit, size_queue, callback):
             if images[-1] is not None:
                 images2 = images
                 images = [None] * pagelimit
-                callback(images2, window_size)
+                callback(images2)
             else:
                 # Already callbacked and no new resize events since.
                 pass
@@ -73,7 +73,6 @@ class ThreadedRasterizer:
     """Shared state for communicating with _rasterize_worker thread."""
     def __init__(self, path, pagelimit=None):
         self.images = None
-        self.window_size = None
 
         self.queue = multiprocessing.Queue()
         self.thread = threading.Thread(
@@ -84,12 +83,11 @@ class ThreadedRasterizer:
 
         self.thread.start()
 
-    def images_done(self, images, window_size):
+    def images_done(self, images):
         # Defer converting PIL to Pyglet to the GUI thread, otherwise weird
         # things happen with Pyglet deleting textures that are still in use.
         with self.lock:
             self.images = images
-            self.window_size = window_size
 
     def push_resize(self, width, height):
         self.queue.put((width, height))
@@ -97,8 +95,8 @@ class ThreadedRasterizer:
     def get(self, index):
         with self.lock:
             if self.images is None:
-                return None, (None, None)
-            return self.images[index], self.window_size
+                return None
+            return self.images[index]
 
 
 def _parse_aspect_from_pdfinfo(info):
