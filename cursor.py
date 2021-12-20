@@ -65,20 +65,24 @@ class Cursor:
         self.time_since_change = 0.0
 
     def tick(self, dt, reverse, forward):
-        """Returns True if the cursor changed, false otherwise."""
+        """Returns True if a redraw might be necessary."""
         old_value = self.cursor
-        # TODO: Make sure this is the right thing to do when both are held.
-        if reverse and forward:
-            return False
-        self.cursor -= self.rev.tick(dt, reverse)
-        self.cursor += self.fwd.tick(dt, forward)
-        self.cursor = min(self.cursor, self.nslides - 1)
-        self.cursor = max(self.cursor, 0)
+        # Avoid oscillations when holding both keys.
+        if not (reverse and forward):
+            self.cursor -= self.rev.tick(dt, reverse)
+            self.cursor += self.fwd.tick(dt, forward)
+            self.cursor = min(self.cursor, self.nslides - 1)
+            self.cursor = max(self.cursor, 0)
         if self.cursor != old_value:
             self.prev_cursor = old_value
             self.time_since_change = 0.0
         else:
             self.time_since_change += dt
+        return (
+            self.time_since_change < DISSOLVE_TIME or
+            self.rev.state in (HOLD, FIRE) or
+            self.fwd.state in (HOLD, FIRE)
+        )
 
     def blend(self):
         return min(DISSOLVE_TIME, self.time_since_change) / DISSOLVE_TIME

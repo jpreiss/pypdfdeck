@@ -22,6 +22,9 @@ KEYS_REV = [
     pyglet.window.key.PAGEUP,
 ]
 
+SLOW_TICK = 1.0
+FAST_TICK = 1.0 / 60
+
 
 def PIL2pyglet(image):
     """Converts a PIL image from the rasterizer into a Pyglet image."""
@@ -97,14 +100,25 @@ def main():
         nonlocal cursor
         forward = any(keyboard[k] for k in KEYS_FWD)
         reverse = any(keyboard[k] for k in KEYS_REV)
-        if cursor.tick(dt, reverse, forward):
-            presenter.window.dispatch_event("on_draw")
-            audience.window.dispatch_event("on_draw")
+        if not cursor.tick(dt, reverse, forward):
+            pyglet.clock.unschedule(on_tick)
+            # Slow tick so we draw after rasterizer is done.
+            pyglet.clock.schedule_interval(on_tick, SLOW_TICK, keyboard=keyboard)
+
+    # Tick slowly except when we are updating the screen - which always begins
+    # with a key press. on_tick will slow itself back down later.
+    def on_key_press(symbol, modifiers):
+        pyglet.clock.unschedule(on_tick)
+        pyglet.clock.schedule_interval(on_tick, FAST_TICK, keyboard=keyboard)
+
+    windows = [presenter, audience]
+    for win in windows:
+        win.window.set_handler("on_key_press", on_key_press)
 
     keyboard = pyglet.window.key.KeyStateHandler()
     presenter.window.push_handlers(keyboard)
     audience.window.push_handlers(keyboard)
-    pyglet.clock.schedule_interval(on_tick, 1.0 / 60, keyboard=keyboard)
+    pyglet.clock.schedule_interval(on_tick, SLOW_TICK, keyboard=keyboard)
 
     # Main loop.
     presenter.window.activate()
