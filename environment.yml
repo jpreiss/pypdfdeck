@@ -1,4 +1,0 @@
-name: pdfpc
-dependencies:
-  - conda-forge::pyglet
-  - conda-forge::pdf2image
