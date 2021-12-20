@@ -6,6 +6,7 @@ but is written in Python and may be easier to install on a non-Linux machine.
 
 The main features are:
 - Separate presenter window showing one slide ahead.
+- Slide dissolve animations (constant time, all slides).
 - Rasterizes pages before showing them, so the slide is not briefly blurred like Preview on a Mac.
 - Responds to Page Up/Down keys for compatibility with remote controls.
 

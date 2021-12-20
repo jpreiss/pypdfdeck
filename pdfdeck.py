@@ -28,7 +28,7 @@ def PIL2pyglet(image):
     raw = image.tobytes()
     image = pyglet.image.ImageData(
         image.width, image.height, "RGB", raw, pitch=-image.width * 3)
-    return image.get_texture()
+    return pyglet.sprite.Sprite(image)
 
 
 class Window:
@@ -37,7 +37,7 @@ class Window:
         self.cursor = cursor
         self.offset = offset
         self.rasterizer = ThreadedRasterizer(pdfpath, pagelimit=cursor.nslides)
-        self.textures = [None] * cursor.nslides
+        self.sprites = [None] * (cursor.nslides + 2)
         self.window = pyglet.window.Window(caption=name, resizable=True)
         self.window.set_handler("on_resize", self.on_resize)
         self.window.set_handler("on_draw", self.on_draw)
@@ -46,25 +46,32 @@ class Window:
     def on_resize(self, width, height):
         self.rasterizer.push_resize(width, height)
 
-    def on_draw(self):
-        self.window.clear()
-
-        index = self.cursor.cursor + self.offset
-        if index < 0 or index >= self.cursor.nslides:
-            return pyglet.event.EVENT_HANDLED
-
+    def _get_sprite(self, index):
         image = self.rasterizer.get(index)
         if image is None:
+            return None
+        sprite = self.sprites[index + 1]
+        if sprite is None or (sprite.width, sprite.height) != image.size:
+            sprite = PIL2pyglet(image)
+            self.sprites[index + 1] = sprite
+        return sprite
+
+    def on_draw(self):
+        self.window.clear()
+        indices = (
+            self.cursor.prev_cursor + self.offset,
+            self.cursor.cursor + self.offset,
+        )
+        sprites = [self._get_sprite(i) for i in indices]
+        if None in sprites:
             return pyglet.event.EVENT_HANDLED
-
-        tex = self.textures[index]
-        if tex is None or (tex.width, tex.height) != image.size:
-            tex = PIL2pyglet(image)
-            self.textures[index] = tex
-
-        dx = (self.window.width - tex.width) // 2
-        dy = (self.window.height - tex.height) // 2
-        tex.blit(dx, dy)
+        dx = (self.window.width - sprites[0].width) // 2
+        dy = (self.window.height - sprites[0].height) // 2
+        sprites[0].opacity = 255
+        sprites[1].opacity = int(255 * self.cursor.blend())
+        for s in sprites:
+            s.update(x=dx, y=dy)
+            s.draw()
         return pyglet.event.EVENT_HANDLED
 
     def on_close(self):
@@ -97,7 +104,7 @@ def main():
     keyboard = pyglet.window.key.KeyStateHandler()
     presenter.window.push_handlers(keyboard)
     audience.window.push_handlers(keyboard)
-    pyglet.clock.schedule_interval(on_tick, 0.05, keyboard=keyboard)
+    pyglet.clock.schedule_interval(on_tick, 1.0 / 60, keyboard=keyboard)
 
     # Main loop.
     presenter.window.activate()

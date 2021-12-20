@@ -1,7 +1,8 @@
-"""Implements cursor logic, including repeats for button hold."""
+"""Implements cursor logic, including key repeats and dissolve timing."""
 
 REPEAT_TRIGGER = 0.4
 REPEAT_INTERVAL = 0.1
+DISSOLVE_TIME = 0.35
 
 UP = 0
 HOLD = 1
@@ -59,7 +60,9 @@ class Cursor:
         self.rev = _Repeater()
         self.fwd = _Repeater()
         self.cursor = 0
+        self.prev_cursor = 0
         self.nslides = nslides
+        self.time_since_change = 0.0
 
     def tick(self, dt, reverse, forward):
         """Returns True if the cursor changed, false otherwise."""
@@ -71,4 +74,11 @@ class Cursor:
         self.cursor += self.fwd.tick(dt, forward)
         self.cursor = min(self.cursor, self.nslides - 1)
         self.cursor = max(self.cursor, 0)
-        return self.cursor != old_value
+        if self.cursor != old_value:
+            self.prev_cursor = old_value
+            self.time_since_change = 0.0
+        else:
+            self.time_since_change += dt
+
+    def blend(self):
+        return min(DISSOLVE_TIME, self.time_since_change) / DISSOLVE_TIME

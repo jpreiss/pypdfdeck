@@ -72,9 +72,16 @@ def _rasterize_worker(pdfpath, pagelimit, size_queue, callback):
 
 
 class ThreadedRasterizer:
-    """Shared state for communicating with _rasterize_worker thread."""
+    """Shared state for communicating with _rasterize_worker thread.
+
+    Also implements the behavior of showing a black slide for an out-of-bounds
+    index instead of crashing. In a larger program this should probably be a
+    separate layer between the rasterizer and the platform-specific GUI. For
+    now it goes here to keep the Pyglet-specific layer as thin as possible.
+    """
     def __init__(self, path, pagelimit=None):
         self.images = None
+        self.black = None
 
         self.queue = multiprocessing.Queue()
         self.thread = threading.Thread(
@@ -90,6 +97,8 @@ class ThreadedRasterizer:
         # things happen with Pyglet deleting textures that are still in use.
         with self.lock:
             self.images = images
+            lut = [0] * (256 * 3)
+            self.black = images[0].point(lut)
 
     def push_resize(self, width, height):
         self.queue.put((width, height))
@@ -98,7 +107,9 @@ class ThreadedRasterizer:
         with self.lock:
             if self.images is None:
                 return None
-            return self.images[index]
+            if index >= 0 and index < len(self.images):
+                return self.images[index]
+            return self.black
 
     def shutdown(self):
         self.queue.put(None)
