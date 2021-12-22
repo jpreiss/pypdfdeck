@@ -2,6 +2,7 @@
 
 import multiprocessing
 import threading
+import time
 import queue
 
 import pdf2image
@@ -91,6 +92,7 @@ class ThreadedRasterizer:
     def __init__(self, path, pagelimit=None):
         self.images = None
         self.black = None
+        self.render_start_time = None
 
         self.queue = multiprocessing.Queue()
         self.thread = threading.Thread(
@@ -108,9 +110,13 @@ class ThreadedRasterizer:
             self.images = images
             lut = [0] * (256 * 3)
             self.black = images[0].point(lut)
+            duration = time.time() - self.render_start_time
+        print(f"render done in {duration:.2f} sec.")
 
     def push_resize(self, width, height):
         self.queue.put((width, height))
+        with self.lock:
+            self.render_start_time = time.time()
 
     def get(self, index):
         with self.lock:
