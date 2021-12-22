@@ -22,6 +22,12 @@ def _winsize2rasterargs(window_size, aspect):
     return (width, height)
 
 
+def _parse_aspect_from_pdfinfo(info):
+    size_str = info["Page size"]
+    width, _, height, _ = size_str.split(" ")
+    return float(width) / float(height)
+
+
 def _rasterize_worker(pdfpath, pagelimit, size_queue, image_queue):
     """Threaded interruptible PDF rasterizer.
 
@@ -127,9 +133,3 @@ class ThreadedRasterizer:
     def shutdown(self):
         self.size_queue.put(None)
         self.thread.join()
-
-
-def _parse_aspect_from_pdfinfo(info):
-    size_str = info["Page size"]
-    width, _, height, _ = size_str.split(" ")
-    return float(width) / float(height)
