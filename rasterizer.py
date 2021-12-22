@@ -1,6 +1,6 @@
 """Threaded interruptible PDF rasterizer."""
 
-import multiprocessing
+import os
 import threading
 import time
 import queue
@@ -9,7 +9,7 @@ import pdf2image
 
 
 CHUNK_PAGES = 32
-MAX_THREADS = multiprocessing.cpu_count() - 1
+MAX_THREADS = os.cpu_count() - 1
 
 
 def _winsize2rasterargs(window_size, aspect):
@@ -22,7 +22,7 @@ def _winsize2rasterargs(window_size, aspect):
     return (width, height)
 
 
-def _rasterize_worker(pdfpath, pagelimit, size_queue, callback):
+def _rasterize_worker(pdfpath, pagelimit, size_queue, image_queue):
     """Threaded interruptible PDF rasterizer.
 
     Listens on size_queue for (width, height) tuples representing window resize
@@ -35,8 +35,7 @@ def _rasterize_worker(pdfpath, pagelimit, size_queue, callback):
         pagelimit (int): Read this many pages from the file. (Mostly for
             development purposes to keep load time down.)
         size_queue (queue-like): Queue to monitor for size changes.
-        callback (fn void(list of PIL images)): Function to call when the full
-            PDF is ready.
+        image_queue (queue-like): Queue to return completed renders.
     """
     info = pdf2image.pdfinfo_from_path(pdfpath)
     aspect = _parse_aspect_from_pdfinfo(info)
@@ -63,9 +62,8 @@ def _rasterize_worker(pdfpath, pagelimit, size_queue, callback):
         if page == pagelimit + 1:
             # Got through them all without changing size.
             if images[-1] is not None:
-                images2 = images
+                image_queue.put(images)
                 images = [None] * pagelimit
-                callback(images2)
             else:
                 # Already callbacked and no new resize events since.
                 pass
@@ -97,40 +95,37 @@ class ThreadedRasterizer:
         self.black = None
         self.render_start_time = None
 
-        self.queue = multiprocessing.Queue()
+        self.size_queue = queue.Queue()
+        self.image_queue = queue.Queue()
         self.thread = threading.Thread(
             target=_rasterize_worker,
-            args=(path, pagelimit, self.queue, self.images_done),
+            args=(path, pagelimit, self.size_queue, self.image_queue),
         )
-        self.lock = threading.Lock()
 
         self.thread.start()
 
-    def images_done(self, images):
-        # Defer converting PIL to Pyglet to the GUI thread, otherwise weird
-        # things happen with Pyglet deleting textures that are still in use.
-        with self.lock:
+    def push_resize(self, width, height):
+        self.size_queue.put((width, height))
+        self.render_start_time = time.time()
+
+    def get(self, index):
+        try:
+            images = self.image_queue.get(block=False)
             self.images = images
             lut = [0] * (256 * 3)
             self.black = images[0].point(lut)
             duration = time.time() - self.render_start_time
-        print(f"render done in {duration:.2f} sec.")
-
-    def push_resize(self, width, height):
-        self.queue.put((width, height))
-        with self.lock:
-            self.render_start_time = time.time()
-
-    def get(self, index):
-        with self.lock:
-            if self.images is None:
-                return None
-            if index >= 0 and index < len(self.images):
-                return self.images[index]
-            return self.black
+            print(f"render done in {duration:.2f} sec.")
+        except queue.Empty:
+            pass
+        if self.images is None:
+            return None
+        if index >= 0 and index < len(self.images):
+            return self.images[index]
+        return self.black
 
     def shutdown(self):
-        self.queue.put(None)
+        self.size_queue.put(None)
         self.thread.join()
 
 
