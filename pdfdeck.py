@@ -46,6 +46,9 @@ class Window:
         self.window.set_handler("on_draw", self.on_draw)
         self.window.set_handler("on_close", self.on_close)
 
+    def toggle_fullscreen(self):
+        self.window.set_fullscreen(not self.window.fullscreen)
+
     def on_resize(self, width, height):
         self.rasterizer.push_resize(width, height)
 
@@ -107,13 +110,18 @@ def main():
 
     # Tick slowly except when we are updating the screen - which always begins
     # with a key press. on_tick will slow itself back down later.
-    def on_key_press(symbol, modifiers):
-        pyglet.clock.unschedule(on_tick)
-        pyglet.clock.schedule_interval(on_tick, FAST_TICK, keyboard=keyboard)
+    def on_key_press(window, symbol, modifiers):
+        if symbol in KEYS_FWD or symbol in KEYS_REV:
+            pyglet.clock.unschedule(on_tick)
+            pyglet.clock.schedule_interval(on_tick, FAST_TICK, keyboard=keyboard)
+        if symbol == pyglet.window.key.F:
+            window.toggle_fullscreen()
 
-    windows = [presenter, audience]
-    for win in windows:
-        win.window.set_handler("on_key_press", on_key_press)
+    # This cannot be a loop over [presenter, audience] due to lexical scoping.
+    presenter.window.set_handler(
+        "on_key_press", lambda sym, mod: on_key_press(presenter, sym, mod))
+    audience.window.set_handler(
+        "on_key_press", lambda sym, mod: on_key_press(audience, sym, mod))
 
     keyboard = pyglet.window.key.KeyStateHandler()
     presenter.window.push_handlers(keyboard)
