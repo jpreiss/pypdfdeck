@@ -1,9 +1,9 @@
 """Threaded interruptible PDF rasterizer."""
 
 import os
+import queue
 import threading
 import time
-import queue
 
 import pdf2image
 
@@ -45,37 +45,39 @@ def _rasterize_worker(pdfpath, pagelimit, size_queue, image_queue):
     """
     info = pdf2image.pdfinfo_from_path(pdfpath)
     aspect = _parse_aspect_from_pdfinfo(info)
-    # The (one-based) index of the page we are to rasterize next. If it exceeds
-    # page_limit, we have no work to do.
-    page = 1
     images = [None] * pagelimit
+
+    # Loop invariant: this is the (one-based) index of the page we should
+    # rasterize next. If it exceeds page_limit, we have no work to do.
+    page = 1
+
     # Block indefinitely for first size.
     window_size = size_queue.get()
     image_size = _winsize2rasterargs(window_size, aspect)
+
     while True:
-        # Get freshest item in queue. This loop would not be necessary if it
-        # was possible for a Queue with a maxsize to discard old items instead
-        # of blocking when it's full and put() is called.
+        # Get freshest item in size_queue. This loop would not be necessary if
+        # it was possible for a Queue with a maxsize to discard old items
+        # instead of blocking when it's full and put() is called.
         try:
             while True:
                 window_size = size_queue.get(timeout=0.1)
                 if window_size is None:
+                    # Sentinel value to stop the thread and exit cleanly.
                     return
                 image_size = _winsize2rasterargs(window_size, aspect)
                 page = 1
         except queue.Empty:
             pass
+
         if page == pagelimit + 1:
-            # Got through them all without changing size.
+            # Got through them all without changing size - push exactly once.
             if images[-1] is not None:
                 image_queue.put(images)
                 images = [None] * pagelimit
-            else:
-                # Already callbacked and no new resize events since.
-                pass
         else:
-            # pdf2image convert_from_bytes just writes to a file, so it's
-            # useless for performance.
+            # One might hope that pdf2image.convert_from_bytes is faster by
+            # staying in-memory, but it just writes the bytes to a temp file.
             chunk = pdf2image.convert_from_path(
                 pdfpath,
                 thread_count=MAX_THREADS,
@@ -126,7 +128,7 @@ class ThreadedRasterizer:
             pass
         if self.images is None:
             return None
-        if index >= 0 and index < len(self.images):
+        if 0 <= index < len(self.images):
             return self.images[index]
         return self.black
 
