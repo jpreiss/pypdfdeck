@@ -1,4 +1,5 @@
 import argparse
+import time
 
 import pdf2image
 import pyglet
@@ -25,6 +26,9 @@ KEYS_REV = [
 SLOW_TICK = 0.5
 FAST_TICK = 1.0 / 60
 
+COLOR_OK = (50, 100, 200, 255)
+COLOR_OVERTIME = (200, 50, 50, 255)
+
 
 def PIL2pyglet(image):
     """Converts a PIL image from the rasterizer into a Pyglet image."""
@@ -34,8 +38,36 @@ def PIL2pyglet(image):
     return pyglet.sprite.Sprite(image)
 
 
+class Timer:
+    def __init__(self, duration):
+        self.duration = duration
+        self.started = None
+
+    def label(self, **kwargs):
+        if self.started is None:
+            self.started = time.monotonic()
+        remaining = self.duration - (time.monotonic() - self.started)
+        remaining_s = time.localtime(abs(remaining))
+        HOUR = 60 * 60
+        if self.duration < HOUR and remaining < HOUR:
+            s = time.strftime("%M:%S", remaining_s)
+        else:
+            s = time.strftime("%H:%M:%S", remaining_s)
+        if remaining < 0:
+            color = COLOR_OVERTIME
+            s = "-" + s
+        else:
+            color = COLOR_OK
+        label = pyglet.text.Label(
+            s,
+            color=color,
+            **kwargs,
+        )
+        return label
+
+
 class Window:
-    def __init__(self, name, pdfpath, cursor, offset):
+    def __init__(self, name, pdfpath, cursor, offset, timer=None):
         self.name = name
         self.cursor = cursor
         self.offset = offset
@@ -46,6 +78,7 @@ class Window:
         self.window.set_handler("on_draw", self.on_draw)
         self.window.set_handler("on_close", self.on_close)
         self.ticks = 0
+        self.timer = timer
 
     def toggle_fullscreen(self):
         self.window.set_fullscreen(not self.window.fullscreen)
@@ -94,6 +127,15 @@ class Window:
         for s in sprites:
             s.update(x=dx, y=dy)
             s.draw()
+        if self.timer is not None:
+            label = self.timer.label(
+                font_size=24,
+                x=self.window.width//2,
+                y=0,
+                anchor_x="center",
+                anchor_y="bottom",
+            )
+            label.draw()
         return pyglet.event.EVENT_HANDLED
 
     def on_close(self):
@@ -109,13 +151,31 @@ def main():
 
     parser = argparse.ArgumentParser(description="PDF slide deck presenter.")
     parser.add_argument("path", type=str, help="PDF file path")
+    parser.add_argument(
+        "--pages",
+        type=int,
+        default=None,
+        help="Limit page count (for debugging)"
+    )
+    parser.add_argument(
+        "--countdown",
+        type=float,
+        default=None,
+        help="Minutes for countown timer."
+    )
     args = parser.parse_args()
 
     info = pdf2image.pdfinfo_from_path(args.path)
     npages = info["Pages"]
+    if args.pages is not None:
+        npages = min(npages, args.pages)
 
     cursor = Cursor(npages)
-    presenter = Window("presenter", args.path, cursor, offset=1)
+    if args.countdown is not None:
+        timer = Timer(args.countdown * 60)
+    else:
+        timer = None
+    presenter = Window("presenter", args.path, cursor, offset=1, timer=timer)
     audience = Window("audience", args.path, cursor, offset=0)
 
     def on_tick(dt, keyboard):
