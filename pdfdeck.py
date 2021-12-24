@@ -22,7 +22,7 @@ KEYS_REV = [
     pyglet.window.key.PAGEUP,
 ]
 
-SLOW_TICK = 1.0
+SLOW_TICK = 0.5
 FAST_TICK = 1.0 / 60
 
 
@@ -45,6 +45,7 @@ class Window:
         self.window.set_handler("on_resize", self.on_resize)
         self.window.set_handler("on_draw", self.on_draw)
         self.window.set_handler("on_close", self.on_close)
+        self.ticks = 0
 
     def toggle_fullscreen(self):
         self.window.set_fullscreen(not self.window.fullscreen)
@@ -63,17 +64,20 @@ class Window:
         return sprite
 
     def _draw_loading(self):
-        text = pyglet.text.Label(
-            "Loading...",
-            font_size=36,
+        # Symmetric dots make centering easier.
+        dots = "." * (self.ticks % 4)
+        text = "".join((dots, "Rasterizing", dots))
+        label = pyglet.text.Label(
+            text,
+            font_size=24,
             x=self.window.width//2,
             y=self.window.height//2,
             anchor_x="center",
-            anchor_y="center",
         )
-        text.draw()
+        label.draw()
 
     def on_draw(self):
+        self.ticks += 1
         self.window.clear()
         indices = (
             self.cursor.prev_cursor + self.offset,
