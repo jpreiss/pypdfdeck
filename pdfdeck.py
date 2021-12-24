@@ -84,6 +84,11 @@ class Window:
         self.window.set_fullscreen(not self.window.fullscreen)
 
     def on_resize(self, width, height):
+        if self.timer is not None:
+            self.timer_fontsize = 0.1 * height
+            font = pyglet.font.load(size=self.timer_fontsize)
+            self.timer_font = font
+            height -= font.ascent
         self.rasterizer.push_resize(width, height)
 
     def _get_sprite(self, index):
@@ -121,7 +126,11 @@ class Window:
             self._draw_loading()
             return pyglet.event.EVENT_HANDLED
         dx = (self.window.width - sprites[0].width) // 2
-        dy = (self.window.height - sprites[0].height) // 2
+        if self.timer is not None:
+            dy = (self.window.height - self.timer_font.ascent - sprites[0].height) // 2
+            dy += self.timer_font.ascent
+        else:
+            dy = (self.window.height - sprites[0].height) // 2
         sprites[0].opacity = 255
         sprites[1].opacity = int(255 * self.cursor.blend())
         for s in sprites:
@@ -129,11 +138,11 @@ class Window:
             s.draw()
         if self.timer is not None:
             label = self.timer.label(
-                font_size=24,
+                font_size=self.timer_fontsize,
                 x=self.window.width//2,
                 y=0,
                 anchor_x="center",
-                anchor_y="bottom",
+                anchor_y="baseline",
             )
             label.draw()
         return pyglet.event.EVENT_HANDLED
