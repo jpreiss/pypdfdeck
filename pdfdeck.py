@@ -1,4 +1,4 @@
-import sys
+import argparse
 
 import pdf2image
 import pyglet
@@ -107,13 +107,16 @@ def main():
     # TODO: Uncomment when implementing fullscreen.
     # modes = [bestmode(s) for s in screens]
 
-    path = sys.argv[1]
-    info = pdf2image.pdfinfo_from_path(path)
+    parser = argparse.ArgumentParser(description="PDF slide deck presenter.")
+    parser.add_argument("path", type=str, help="PDF file path")
+    args = parser.parse_args()
+
+    info = pdf2image.pdfinfo_from_path(args.path)
     npages = info["Pages"]
 
     cursor = Cursor(npages)
-    presenter = Window("presenter", path, cursor, offset=1)
-    audience = Window("audience", path, cursor, offset=0)
+    presenter = Window("presenter", args.path, cursor, offset=1)
+    audience = Window("audience", args.path, cursor, offset=0)
 
     def on_tick(dt, keyboard):
         nonlocal cursor
