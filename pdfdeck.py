@@ -62,6 +62,17 @@ class Window:
             self.sprites[index + 1] = sprite
         return sprite
 
+    def _draw_loading(self):
+        text = pyglet.text.Label(
+            "Loading...",
+            font_size=36,
+            x=self.window.width//2,
+            y=self.window.height//2,
+            anchor_x="center",
+            anchor_y="center",
+        )
+        text.draw()
+
     def on_draw(self):
         self.window.clear()
         indices = (
@@ -70,6 +81,7 @@ class Window:
         )
         sprites = [self._get_sprite(i) for i in indices]
         if None in sprites:
+            self._draw_loading()
             return pyglet.event.EVENT_HANDLED
         dx = (self.window.width - sprites[0].width) // 2
         dy = (self.window.height - sprites[0].height) // 2
