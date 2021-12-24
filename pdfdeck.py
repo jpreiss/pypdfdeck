@@ -38,6 +38,32 @@ def PIL2pyglet(image):
     return pyglet.sprite.Sprite(image)
 
 
+def compute_image_height(doc_aspect, win_w, win_h, timer_ratio):
+    """Computes the image height with optional space for timer.
+
+    Args:
+        doc_aspect: The aspect ratio of the document.
+        win_w: The width of the window.
+        win_h: The height of the window.
+        timer_ratio: The desired ratio (timer height) / (image height).
+
+    Returs:
+        img_h: Height of the image such the image and extra vertical space of
+          timer_ratio * img_h fit within the window.
+    """
+    win_aspect = win_w / win_h
+    content_aspect = doc_aspect / (1.0 + timer_ratio)
+    if win_aspect < content_aspect:
+        # Tall window - pad timer
+        content_h = win_w / content_aspect
+    else:
+        # Wide window - tight fit
+        content_h = win_h
+    # solve img_h + timer_ratio * img_h = content_h
+    img_h = content_h / (1.0 + timer_ratio)
+    return img_h
+
+
 class Timer:
     def __init__(self, duration):
         self.duration = duration
@@ -66,6 +92,17 @@ class Timer:
         return label
 
 
+def pix2font():
+    sizes = [10 * i for i in range(1, 11)]
+    ascents = [pyglet.font.load(size=s).ascent for s in sizes]
+    ratios = [s / a for s, a in zip(sizes, ascents)]
+    print("font size ratios:", ratios)
+    return min(ratios)
+
+
+PIX2FONT = pix2font()
+
+
 class Window:
     def __init__(self, name, pdfpath, cursor, offset, timer=None):
         self.name = name
@@ -80,16 +117,16 @@ class Window:
         self.ticks = 0
         self.timer = timer
 
+    def _factor(self):
+        return 0.2 if self.timer is not None else 0.0
+
     def toggle_fullscreen(self):
         self.window.set_fullscreen(not self.window.fullscreen)
 
     def on_resize(self, width, height):
-        if self.timer is not None:
-            self.timer_fontsize = 0.1 * height
-            font = pyglet.font.load(size=self.timer_fontsize)
-            self.timer_font = font
-            height -= font.ascent
-        self.rasterizer.push_resize(width, height)
+        img_h = compute_image_height(self.rasterizer.aspect, width, height, self._factor())
+        img_w = self.rasterizer.aspect * img_h
+        self.rasterizer.push_resize(img_w, img_h)
 
     def _get_sprite(self, index):
         image = self.rasterizer.get(index)
@@ -127,8 +164,20 @@ class Window:
             return pyglet.event.EVENT_HANDLED
         dx = (self.window.width - sprites[0].width) // 2
         if self.timer is not None:
-            dy = (self.window.height - self.timer_font.ascent - sprites[0].height) // 2
-            dy += self.timer_font.ascent
+            margin = 0.05 * self._factor() * sprites[0].height
+            textheight = 0.9 * self._factor() * sprites[0].height
+            fontsize = PIX2FONT * textheight
+            pad_total = self.window.height - (textheight + sprites[0].height)
+            pad_bottom = pad_total / 2 + margin
+            label = self.timer.label(
+                font_size=fontsize,
+                x=self.window.width//2,
+                y=pad_bottom,
+                anchor_x="center",
+                anchor_y="baseline",
+            )
+            label.draw()
+            dy = (self.window.height - textheight - sprites[0].height) // 2 + textheight
         else:
             dy = (self.window.height - sprites[0].height) // 2
         sprites[0].opacity = 255
@@ -136,15 +185,6 @@ class Window:
         for s in sprites:
             s.update(x=dx, y=dy)
             s.draw()
-        if self.timer is not None:
-            label = self.timer.label(
-                font_size=self.timer_fontsize,
-                x=self.window.width//2,
-                y=0,
-                anchor_x="center",
-                anchor_y="baseline",
-            )
-            label.draw()
         return pyglet.event.EVENT_HANDLED
 
     def on_close(self):

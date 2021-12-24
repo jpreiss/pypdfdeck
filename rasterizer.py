@@ -28,7 +28,7 @@ def _parse_aspect_from_pdfinfo(info):
     return float(width) / float(height)
 
 
-def _rasterize_worker(pdfpath, pagelimit, size_queue, image_queue):
+def _rasterize_worker(pdfpath, aspect, pagelimit, size_queue, image_queue):
     """Threaded interruptible PDF rasterizer.
 
     Listens on size_queue for (width, height) tuples representing window resize
@@ -38,13 +38,12 @@ def _rasterize_worker(pdfpath, pagelimit, size_queue, image_queue):
 
     Args:
         pdfpath (str): Path of PDF file.
+        aspect (float): Aspect ratio (width/height) of PDF file.
         pagelimit (int): Read this many pages from the file. (Mostly for
             development purposes to keep load time down.)
         size_queue (queue-like): Queue to monitor for size changes.
         image_queue (queue-like): Queue to return completed renders.
     """
-    info = pdf2image.pdfinfo_from_path(pdfpath)
-    aspect = _parse_aspect_from_pdfinfo(info)
     images = [None] * pagelimit
 
     # Loop invariant: this is the (one-based) index of the page we should
@@ -52,8 +51,7 @@ def _rasterize_worker(pdfpath, pagelimit, size_queue, image_queue):
     page = 1
 
     # Block indefinitely for first size.
-    window_size = size_queue.get()
-    image_size = _winsize2rasterargs(window_size, aspect)
+    image_size = size_queue.get()
 
     while True:
         # Get freshest item in size_queue. This loop would not be necessary if
@@ -61,11 +59,10 @@ def _rasterize_worker(pdfpath, pagelimit, size_queue, image_queue):
         # instead of blocking when it's full and put() is called.
         try:
             while True:
-                window_size = size_queue.get(timeout=0.1)
-                if window_size is None:
+                image_size = size_queue.get(timeout=0.1)
+                if image_size is None:
                     # Sentinel value to stop the thread and exit cleanly.
                     return
-                image_size = _winsize2rasterargs(window_size, aspect)
                 page = 1
         except queue.Empty:
             pass
@@ -103,13 +100,15 @@ class ThreadedRasterizer:
         self.black = None
         self.render_start_time = None
 
+        info = pdf2image.pdfinfo_from_path(path)
+        self.aspect = _parse_aspect_from_pdfinfo(info)
+
         self.size_queue = queue.Queue()
         self.image_queue = queue.Queue()
         self.thread = threading.Thread(
             target=_rasterize_worker,
-            args=(path, pagelimit, self.size_queue, self.image_queue),
+            args=(path, self.aspect, pagelimit, self.size_queue, self.image_queue),
         )
-
         self.thread.start()
 
     def push_resize(self, width, height):
