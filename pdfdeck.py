@@ -64,22 +64,32 @@ def compute_image_height(doc_aspect, win_w, win_h, timer_ratio):
     return img_h
 
 
-class Timer:
-    def __init__(self, duration):
-        self.duration = duration
+class TimerDisplay:
+    """Timing code and text output for countdown timer."""
+    def __init__(self, duration_secs):
+        self.duration = duration_secs
         self.started = None
 
     def label(self, **kwargs):
+        """Returns a colored text label showing the time remaining.
+
+        Args:
+            **kwargs: Forwarded to pyglet.text.Label constructor.
+        """
         if self.started is None:
+            # TODO: Is this definitely the best clock? We want monotonicity but
+            # low drift is also important.
             self.started = time.monotonic()
         remaining = self.duration - (time.monotonic() - self.started)
-        remaining_s = time.localtime(abs(remaining))
+        remaining_struct = time.localtime(abs(remaining))
         HOUR = 60 * 60
         if self.duration < HOUR and remaining < HOUR:
-            s = time.strftime("%M:%S", remaining_s)
+            s = time.strftime("%M:%S", remaining_struct)
         else:
-            s = time.strftime("%H:%M:%S", remaining_s)
+            s = time.strftime("%H:%M:%S", remaining_struct)
         if remaining < 0:
+            # TODO: Left-pad when positive so the colon doesn't move when we
+            # shift to negative. Or, use 3 separate labels.
             color = COLOR_OVERTIME
             s = "-" + s
         else:
@@ -93,10 +103,11 @@ class Timer:
 
 
 def pix2font():
+    """Estimates the ratio (font size) / (height of number chars in pixels)."""
     sizes = [10 * i for i in range(1, 11)]
     ascents = [pyglet.font.load(size=s).ascent for s in sizes]
     ratios = [s / a for s, a in zip(sizes, ascents)]
-    print("font size ratios:", ratios)
+    # Be conservative - padding is better than cutting off.
     return min(ratios)
 
 
@@ -117,16 +128,67 @@ class Window:
         self.ticks = 0
         self.timer = timer
 
-    def _factor(self):
-        return 0.2 if self.timer is not None else 0.0
-
+    # Public methods.
     def toggle_fullscreen(self):
         self.window.set_fullscreen(not self.window.fullscreen)
 
+    # Event handlers.
     def on_resize(self, width, height):
-        img_h = compute_image_height(self.rasterizer.aspect, width, height, self._factor())
+        img_h = compute_image_height(
+            self.rasterizer.aspect,
+            width,
+            height,
+            self._timer_height_factor()
+        )
         img_w = self.rasterizer.aspect * img_h
         self.rasterizer.push_resize(img_w, img_h)
+
+    def on_draw(self):
+        self.ticks += 1
+        self.window.clear()
+        indices = (
+            self.cursor.prev_cursor + self.offset,
+            self.cursor.cursor + self.offset,
+        )
+        sprites = [self._get_sprite(i) for i in indices]
+        if None in sprites:
+            self._draw_loading()
+            return pyglet.event.EVENT_HANDLED
+        # TODO: Double-check that we are doing integer and floating point
+        # division in the right places.
+        # TODO: Move Pyglet-independent code into layout functions or class.
+        dx = (self.window.width - sprites[0].width) // 2
+        if self.timer is not None:
+            margin = 0.05 * self._timer_height_factor() * sprites[0].height
+            textheight = 0.9 * self._timer_height_factor() * sprites[0].height
+            fontsize = PIX2FONT * textheight
+            content_height = textheight + sprites[0].height
+            pad_total = self.window.height - content_height
+            pad_bottom = pad_total / 2 + margin
+            label = self.timer.label(
+                font_size=fontsize,
+                x=self.window.width//2,
+                y=pad_bottom,
+                anchor_x="center",
+                anchor_y="baseline",
+            )
+            label.draw()
+            dy = (self.window.height - content_height) // 2 + textheight
+        else:
+            dy = (self.window.height - sprites[0].height) // 2
+        sprites[0].opacity = 255
+        sprites[1].opacity = int(255 * self.cursor.blend())
+        for s in sprites:
+            s.update(x=dx, y=dy)
+            s.draw()
+        return pyglet.event.EVENT_HANDLED
+
+    def on_close(self):
+        self.rasterizer.shutdown()
+
+    # Private methods.
+    def _timer_height_factor(self):
+        return 0.2 if self.timer is not None else 0.0
 
     def _get_sprite(self, index):
         image = self.rasterizer.get(index)
@@ -151,44 +213,6 @@ class Window:
         )
         label.draw()
 
-    def on_draw(self):
-        self.ticks += 1
-        self.window.clear()
-        indices = (
-            self.cursor.prev_cursor + self.offset,
-            self.cursor.cursor + self.offset,
-        )
-        sprites = [self._get_sprite(i) for i in indices]
-        if None in sprites:
-            self._draw_loading()
-            return pyglet.event.EVENT_HANDLED
-        dx = (self.window.width - sprites[0].width) // 2
-        if self.timer is not None:
-            margin = 0.05 * self._factor() * sprites[0].height
-            textheight = 0.9 * self._factor() * sprites[0].height
-            fontsize = PIX2FONT * textheight
-            pad_total = self.window.height - (textheight + sprites[0].height)
-            pad_bottom = pad_total / 2 + margin
-            label = self.timer.label(
-                font_size=fontsize,
-                x=self.window.width//2,
-                y=pad_bottom,
-                anchor_x="center",
-                anchor_y="baseline",
-            )
-            label.draw()
-            dy = (self.window.height - textheight - sprites[0].height) // 2 + textheight
-        else:
-            dy = (self.window.height - sprites[0].height) // 2
-        sprites[0].opacity = 255
-        sprites[1].opacity = int(255 * self.cursor.blend())
-        for s in sprites:
-            s.update(x=dx, y=dy)
-            s.draw()
-        return pyglet.event.EVENT_HANDLED
-
-    def on_close(self):
-        self.rasterizer.shutdown()
 
 
 def main():
@@ -221,7 +245,7 @@ def main():
 
     cursor = Cursor(npages)
     if args.countdown is not None:
-        timer = Timer(args.countdown * 60)
+        timer = TimerDisplay(args.countdown * 60)
     else:
         timer = None
     presenter = Window("presenter", args.path, cursor, offset=1, timer=timer)
