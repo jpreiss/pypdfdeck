@@ -38,29 +38,29 @@ def PIL2pyglet(image):
     return pyglet.sprite.Sprite(image)
 
 
-def compute_image_height(doc_aspect, win_w, win_h, timer_ratio):
-    """Computes the image height with optional space for timer.
+def compute_image_height(doc_aspect, win_w, win_h, extras_ratio):
+    """Computes the image height with optional space for extras.
 
     Args:
         doc_aspect: The aspect ratio of the document.
         win_w: The width of the window.
         win_h: The height of the window.
-        timer_ratio: The desired ratio (timer height) / (image height).
+        extras_ratio: The desired ratio (extras height) / (image height).
 
     Returs:
         img_h: Height of the image such the image and extra vertical space of
-          timer_ratio * img_h fit within the window.
+          extras_ratio * img_h fit within the window.
     """
     win_aspect = win_w / win_h
-    content_aspect = doc_aspect / (1.0 + timer_ratio)
+    content_aspect = doc_aspect / (1.0 + extras_ratio)
     if win_aspect < content_aspect:
-        # Tall window - pad timer
+        # Tall window - pad.
         content_h = win_w / content_aspect
     else:
-        # Wide window - tight fit
+        # Wide window - tight fit.
         content_h = win_h
-    # solve img_h + timer_ratio * img_h = content_h
-    img_h = content_h / (1.0 + timer_ratio)
+    # solve img_h + extras_ratio * img_h = content_h
+    img_h = content_h / (1.0 + extras_ratio)
     return img_h
 
 
@@ -112,6 +112,11 @@ def pix2font():
 
 
 PIX2FONT = pix2font()
+TIMER_MARGIN_TOP_RATIO = 0.0
+TIMER_RATIO = 0.17
+TIMER_MARGIN_BOTTOM_RATIO = 0.04
+HEIGHT_RATIOS = [1.0, TIMER_MARGIN_TOP_RATIO, TIMER_RATIO, TIMER_MARGIN_BOTTOM_RATIO]
+EXTRAS_RATIO = sum(HEIGHT_RATIOS[1:])
 
 
 class Window:
@@ -159,21 +164,20 @@ class Window:
         # TODO: Move Pyglet-independent code into layout functions or class.
         dx = (self.window.width - sprites[0].width) // 2
         if self.timer is not None:
-            margin = 0.05 * self._timer_height_factor() * sprites[0].height
-            textheight = 0.9 * self._timer_height_factor() * sprites[0].height
-            fontsize = PIX2FONT * textheight
-            content_height = textheight + sprites[0].height
-            pad_total = self.window.height - content_height
-            pad_bottom = pad_total / 2 + margin
+            img_h = sprites[0].height
+            heights = [r * img_h for r in HEIGHT_RATIOS]
+            fontsize = PIX2FONT * heights[2]
+            content_height = sum(heights)
+            pad = (self.window.height - content_height) / 2
             label = self.timer.label(
                 font_size=fontsize,
                 x=self.window.width//2,
-                y=pad_bottom,
+                y=pad+heights[-1],
                 anchor_x="center",
                 anchor_y="baseline",
             )
             label.draw()
-            dy = (self.window.height - content_height) // 2 + textheight
+            dy = pad + sum(heights[1:])
         else:
             dy = (self.window.height - sprites[0].height) // 2
         sprites[0].opacity = 255
@@ -188,7 +192,7 @@ class Window:
 
     # Private methods.
     def _timer_height_factor(self):
-        return 0.2 if self.timer is not None else 0.0
+        return EXTRAS_RATIO if self.timer is not None else 0.0
 
     def _get_sprite(self, index):
         image = self.rasterizer.get(index)
