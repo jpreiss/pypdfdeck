@@ -88,10 +88,8 @@ class TimerDisplay:
         else:
             s = time.strftime("%H:%M:%S", remaining_struct)
         if remaining < 0:
-            # TODO: Left-pad when positive so the colon doesn't move when we
-            # shift to negative. Or, use 3 separate labels.
             color = COLOR_OVERTIME
-            s = "-" + s
+            s = "-" + s + " "
         else:
             color = COLOR_OK
         label = pyglet.text.Label(
@@ -117,6 +115,9 @@ TIMER_RATIO = 0.17
 TIMER_MARGIN_BOTTOM_RATIO = 0.04
 HEIGHT_RATIOS = [1.0, TIMER_MARGIN_TOP_RATIO, TIMER_RATIO, TIMER_MARGIN_BOTTOM_RATIO]
 EXTRAS_RATIO = sum(HEIGHT_RATIOS[1:])
+# TODO: Add common monospace fonts to list. (Note: Sadly, Pyglet does not
+# appear to support any notion of "default monospaced font".
+FONTS = ("Monaco", "Inconsolata",)
 
 
 class Window:
@@ -170,6 +171,7 @@ class Window:
             content_height = sum(heights)
             pad = (self.window.height - content_height) / 2
             label = self.timer.label(
+                font_name=FONTS,
                 font_size=fontsize,
                 x=self.window.width//2,
                 y=pad+heights[-1],
@@ -205,11 +207,11 @@ class Window:
         return sprite
 
     def _draw_loading(self):
-        # Symmetric dots make centering easier.
-        dots = "." * (self.ticks % 4)
-        text = "".join((dots, "Rasterizing", dots))
+        k = self.ticks % 4
+        text = "".join((" " * k, "Rasterizing", "." * k))
         label = pyglet.text.Label(
             text,
+            font_name=FONTS,
             font_size=24,
             x=self.window.width//2,
             y=self.window.height//2,
