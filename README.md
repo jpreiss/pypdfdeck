@@ -4,6 +4,7 @@ This is a tool for displaying a PDF file (e.g. from LaTeX Beamer) as a slide sho
 
 The main features are:
 - Separate presenter window showing one slide ahead.
+- Countdown timer.
 - Slide dissolve animations (constant time, all slides).
 - Rasterizes pages before showing them, so the slide is not briefly blurred like Preview on a Mac.
 - Responds to Page Up/Down keys for compatibility with remote controls.
