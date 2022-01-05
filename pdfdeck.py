@@ -240,7 +240,7 @@ def main():
         "--countdown",
         type=float,
         default=None,
-        help="Minutes for countown timer."
+        help="Minutes for countdown timer."
     )
     args = parser.parse_args()
 
