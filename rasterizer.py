@@ -2,6 +2,7 @@
 
 import os
 import queue
+import tempfile
 import threading
 import time
 
@@ -75,13 +76,15 @@ def _rasterize_worker(pdfpath, aspect, pagelimit, size_queue, image_queue):
         else:
             # One might hope that pdf2image.convert_from_bytes is faster by
             # staying in-memory, but it just writes the bytes to a temp file.
-            chunk = pdf2image.convert_from_path(
-                pdfpath,
-                thread_count=MAX_THREADS,
-                size=image_size,
-                first_page=page,
-                last_page=page+CHUNK_PAGES-1,
-            )
+            with tempfile.TemporaryDirectory() as path:
+                chunk = pdf2image.convert_from_path(
+                    pdfpath,
+                    thread_count=MAX_THREADS,
+                    size=image_size,
+                    first_page=page,
+                    last_page=page+CHUNK_PAGES-1,
+                    output_folder=path,
+                )
             for img in chunk:
                 images[page - 1] = img
                 page += 1
