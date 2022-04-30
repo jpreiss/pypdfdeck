@@ -1,15 +1,54 @@
 """Threaded interruptible PDF rasterizer."""
 
+from dataclasses import dataclass
 import os
 import queue
 import threading
 import time
+from typing import Any, Dict
 
 import pdf2image
 
 
 CHUNK_PAGES = 32
 MAX_THREADS = os.cpu_count() - 1
+LRU_SIZE = 4
+
+
+# There are pip packages for this, but we try to minimize dependencies.
+#
+# Implementation note: Theoretically, enough operations self.counter will
+# become bignum. But in practice, nobody will resize their window billions of
+# times, so we are OK to use this logic instead of the more complex logic
+# needed to ensure that age counters are no larger than the cache size. Also,
+# we could use a priority queue for O(log N) evicition, but our cache size is
+# not big enough for that to matter.
+class LRUDict:
+    @dataclass
+    class _LRUEntry:
+        used: int
+        item: Any
+
+    def __init__(self, size):
+        self.dict: Dict[Any, LRUDict._LRUEntry] = {}
+        self.size: int = size
+        self.counter: int = 0
+
+    def __contains__(self, key):
+        return key in self.dict
+
+    def __getitem__(self, key):
+        entry = self.dict[key]
+        entry.used = self.counter
+        self.counter += 1
+        return entry.item
+
+    def __setitem__(self, key, value):
+        if (len(self.dict) == self.size) and (key not in self.dict):
+            key_oldest, _ = min(self.dict.items(), key=lambda item: item[1].used)
+            del self.dict[key_oldest]
+        self.dict[key] = LRUDict._LRUEntry(self.counter, value)
+        self.counter += 1
 
 
 def _winsize2rasterargs(window_size, aspect):
@@ -70,7 +109,7 @@ def _rasterize_worker(pdfpath, aspect, pagelimit, size_queue, image_queue):
         if page == pagelimit + 1:
             # Got through them all without changing size - push exactly once.
             if images[-1] is not None:
-                image_queue.put(images)
+                image_queue.put((image_size, images))
                 images = [None] * pagelimit
         else:
             # One might hope that pdf2image.convert_from_bytes is faster by
@@ -100,6 +139,8 @@ class ThreadedRasterizer:
         self.black = None
         self.render_start_time = None
 
+        self.cache = LRUDict(4)
+
         info = pdf2image.pdfinfo_from_path(path)
         self.aspect = _parse_aspect_from_pdfinfo(info)
 
@@ -111,18 +152,21 @@ class ThreadedRasterizer:
         )
         self.thread.start()
 
-    def push_resize(self, width, height):
-        self.size_queue.put((width, height))
-        self.render_start_time = time.time()
+    def push_resize(self, w, h):
+        if (w, h) not in self.cache:
+            self.size_queue.put((w, h))
+            self.render_start_time = time.time()
+        else:
+            self._set_images(self.cache[(w, h)])
+            print(f"retrieved ({w:.1f}, {h:.1f}) render from cache.")
 
     def get(self, index):
         try:
-            images = self.image_queue.get(block=False)
-            self.images = images
-            lut = [0] * (256 * 3)
-            self.black = images[0].point(lut)
+            (w, h), images = self.image_queue.get(block=False)
+            self.cache[(w, h)] = images
+            self._set_images(images)
             duration = time.time() - self.render_start_time
-            print(f"render done in {duration:.2f} sec.")
+            print(f"rendered ({w:.1f}, {h:.1f}) in {duration:.2f} sec.")
         except queue.Empty:
             pass
         if self.images is None:
@@ -134,3 +178,8 @@ class ThreadedRasterizer:
     def shutdown(self):
         self.size_queue.put(None)
         self.thread.join()
+
+    def _set_images(self, images):
+        self.images = images
+        lut = [0] * (256 * 3)
+        self.black = images[0].point(lut)
