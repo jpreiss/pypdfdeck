@@ -1,7 +1,7 @@
 """Implements cursor logic, including key repeats and dissolve timing."""
 
 REPEAT_TRIGGER = 0.4
-REPEAT_INTERVAL = 0.1
+REPEAT_INTERVAL = 0.05
 DISSOLVE_TIME = 0.35
 
 UP = 0
@@ -75,7 +75,11 @@ class Cursor:
             self.cursor = max(self.cursor, 0)
         if self.cursor != old_value:
             self.prev_cursor = old_value
-            self.time_since_change = 0.0
+            # Don't use dissolves when rapid-changing.
+            if FIRE in (self.rev.state, self.fwd.state):
+                self.time_since_change = DISSOLVE_TIME * 2
+            else:
+                self.time_since_change = 0.0
         else:
             self.time_since_change += dt
         return (
