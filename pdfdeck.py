@@ -245,6 +245,9 @@ def main():
     args = parser.parse_args()
 
     info = pdf2image.pdfinfo_from_path(args.path)
+    print("PDF info:")
+    for k, v in info.items():
+        print(f"{k}: {v}")
     npages = info["Pages"]
     if args.pages is not None:
         npages = min(npages, args.pages)
