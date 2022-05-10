@@ -1,6 +1,6 @@
 """Implements cursor logic, including key repeats and dissolve timing."""
 
-REPEAT_TRIGGER = 0.4
+REPEAT_TRIGGER = 0.75
 REPEAT_INTERVAL = 0.05
 DISSOLVE_TIME = 0.35
 
