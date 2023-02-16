@@ -14,6 +14,9 @@ CHUNK_PAGES = 32
 MAX_THREADS = os.cpu_count() - 1
 LRU_SIZE = 4
 
+_EXIT_SENTINEL = -1
+_IDLE_SENTINEL = -2
+
 
 # There are pip packages for this, but we try to minimize dependencies.
 #
@@ -99,10 +102,15 @@ def _rasterize_worker(pdfpath, aspect, pagelimit, size_queue, image_queue):
         try:
             while True:
                 image_size = size_queue.get(timeout=0.1)
-                if image_size is None:
-                    # Sentinel value to stop the thread and exit cleanly.
+                if image_size == _EXIT_SENTINEL:
+                    # Stop the thread and exit cleanly.
                     return
-                page = 1
+                elif image_size == _IDLE_SENTINEL:
+                    # If working, stop.
+                    page = pagelimit + 1
+                    images = [None] * pagelimit
+                else:
+                    page = 1
         except queue.Empty:
             pass
 
@@ -157,6 +165,11 @@ class ThreadedRasterizer:
             self.size_queue.put((w, h))
             self.render_start_time = time.time()
         else:
+            # _IDLE_SENTINEL avoids the following bug:
+            # 1) resize to non-cached size 1, start a render
+            # 2) resize to cached size 2 before render is done
+            # 3) render of now-invalid size 1 finishes, is pushed to image_queue
+            self.size_queue.put(_IDLE_SENTINEL)
             self._set_images(self.cache[(w, h)])
             print(f"retrieved ({w:.1f}, {h:.1f}) render from cache.")
 
@@ -176,7 +189,7 @@ class ThreadedRasterizer:
         return self.black
 
     def shutdown(self):
-        self.size_queue.put(None)
+        self.size_queue.put(_EXIT_SENTINEL)
         self.thread.join()
 
     def _set_images(self, images):
