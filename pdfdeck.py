@@ -1,15 +1,14 @@
 import argparse
+import functools
 import time
+import warnings
 
+import numpy as np
 import pdf2image
 import pyglet
 
 from cursor import Cursor
 from rasterizer import ThreadedRasterizer
-
-
-def bestmode(screen):
-    return max(screen.get_modes(), key=lambda m: m.height)
 
 
 KEYS_FWD = [
@@ -28,6 +27,12 @@ FAST_TICK = 1.0 / 60
 
 COLOR_OK = (50, 100, 200, 255)
 COLOR_OVERTIME = (200, 50, 50, 255)
+
+
+def bestmode(screen):
+    """Finds the highest-DPI mode."""
+    modes = screen.get_modes()
+    return max(modes, key=lambda m: m.height)
 
 
 def PIL2pyglet(image):
@@ -120,6 +125,32 @@ EXTRAS_RATIO = sum(HEIGHT_RATIOS[1:])
 FONTS = ("Monaco", "Inconsolata",)
 
 
+def event_debug(name, *args, **kwargs):
+    print("Window event", name)
+    print("args:")
+    print("-----")
+    for a in args:
+        print(a)
+    print("kwargs:")
+    print("-------")
+    for k, v in kwargs.items():
+        print(k, ":", v)
+
+
+class Box:
+    def __init__(self, lb, ub):
+        self.lb = np.array(lb)
+        self.ub = np.array(ub)
+
+    def area(self):
+        if np.any(self.ub <= self.lb):
+            return 0
+        return np.prod(self.ub - self.lb)
+
+    def intersection(self, other):
+        return Box(np.maximum(self.lb, other.lb), np.minimum(self.ub, other.ub))
+
+
 class Window:
     def __init__(self, name, pdfpath, cursor, offset, timer=None):
         self.name = name
@@ -130,15 +161,56 @@ class Window:
         self.window = pyglet.window.Window(caption=name, resizable=True)
         self.window.set_handler("on_resize", self.on_resize)
         self.window.set_handler("on_draw", self.on_draw)
+        self.window.set_handler("on_expose", self.on_draw)
         self.window.set_handler("on_close", self.on_close)
+        debug_events = [
+            "on_resize",
+            "on_activate",
+            "on_close",
+            "on_context_lost",
+            "on_deactivate",
+            "on_expose",
+            "on_hide",
+            "on_move",
+            "on_resize",
+            "on_show",
+        ]
+        self.debug_handlers = []
+        for evname in debug_events:
+            handler = functools.partial(event_debug, evname)
+            self.debug_handlers.append(handler) # Pyglet only stores a weak reference.
+            self.window.push_handlers(**{evname: handler})
         self.ticks = 0
         self.timer = timer
+        self.fullscreen = False
 
     # Public methods.
     def toggle_fullscreen(self):
-        self.window.set_fullscreen(not self.window.fullscreen)
+
+        self.fullscreen = not self.fullscreen
+        if self.fullscreen:
+            screens = pyglet.canvas.get_display().get_screens()
+            lb = np.array(self.window.get_location())
+            ub = lb + np.array(self.window.get_size())
+            winbox = Box(lb, ub)
+            def intersection_area(screen):
+                lb = np.array([screen.x, screen.y])
+                ub = lb + np.array([screen.width, screen.height])
+                return Box(lb, ub).intersection(winbox).area()
+            screens = sorted(screens, key=intersection_area)
+            best_screen = screens[-1]
+            mode = bestmode(best_screen)
+            self.window.set_fullscreen(True, best_screen, mode=mode)
+        else:
+            self.window.set_fullscreen(False, self.window.screen)
 
     # Event handlers.
+    def on_activate(self):
+        w = self.window.width
+        h = self.window.height
+        self.window.switch_to()
+        self.on_resize(w, h)
+
     def on_resize(self, width, height):
         img_h = compute_image_height(
             self.rasterizer.aspect,
@@ -147,6 +219,7 @@ class Window:
             self._timer_height_factor()
         )
         img_w = self.rasterizer.aspect * img_h
+        print("push_resize", img_w, img_h)
         self.rasterizer.push_resize(img_w, img_h)
 
     def on_draw(self):
@@ -222,11 +295,6 @@ class Window:
 
 
 def main():
-
-    display = pyglet.canvas.get_display()
-    screens = display.get_screens()
-    # TODO: Uncomment when implementing fullscreen.
-    # modes = [bestmode(s) for s in screens]
 
     parser = argparse.ArgumentParser(description="PDF slide deck presenter.")
     parser.add_argument("path", type=str, help="PDF file path")
