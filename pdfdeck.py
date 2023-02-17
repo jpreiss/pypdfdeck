@@ -349,6 +349,11 @@ def main():
         if symbol in KEYS_FWD or symbol in KEYS_REV:
             pyglet.clock.unschedule(on_tick)
             pyglet.clock.schedule_interval(on_tick, FAST_TICK, keyboard=keyboard)
+            return pyglet.event.EVENT_HANDLED
+        if symbol == pyglet.window.key.ESCAPE:
+            # Intercept -- I am used to Escape meaning "exit fullscreen", but
+            # Pyglet always uses it to close the window.
+            return pyglet.event.EVENT_HANDLED
 
     # This cannot be a loop over [presenter, audience] due to lexical scoping.
     presenter.window.set_handler(
