@@ -132,6 +132,7 @@ class VideoOverlays:
             player.loop = True
             player.seek(0)
             player.pause()
+            player.monkeypatch_name = path
             self.players[page] = player
 
     def on_resize(self):
@@ -166,10 +167,10 @@ class VideoOverlays:
             return False
 
         if self.page != page:
-            self.players[self.page].pause()
+            if self.page is not None:
+                self.players[self.page].pause()
             player = self.players[page]
-            print("Starting video:")
-            print(player.source.info)
+            print("Starting video", player.monkeypatch_name)
             player.seek(0)
             player.play()
             self.page = page
