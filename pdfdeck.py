@@ -8,10 +8,6 @@ from cursor import Cursor
 from rasterizer import ThreadedRasterizer
 
 
-def bestmode(screen):
-    return max(screen.get_modes(), key=lambda m: m.height)
-
-
 KEYS_FWD = [
     pyglet.window.key.RIGHT,
     pyglet.window.key.UP,
@@ -134,10 +130,6 @@ class Window:
         self.ticks = 0
         self.timer = timer
 
-    # Public methods.
-    def toggle_fullscreen(self):
-        self.window.set_fullscreen(not self.window.fullscreen)
-
     # Event handlers.
     def on_resize(self, width, height):
         img_h = compute_image_height(
@@ -222,12 +214,6 @@ class Window:
 
 
 def main():
-
-    display = pyglet.canvas.get_display()
-    screens = display.get_screens()
-    # TODO: Uncomment when implementing fullscreen.
-    # modes = [bestmode(s) for s in screens]
-
     parser = argparse.ArgumentParser(description="PDF slide deck presenter.")
     parser.add_argument("path", type=str, help="PDF file path")
     parser.add_argument(
@@ -275,8 +261,6 @@ def main():
         if symbol in KEYS_FWD or symbol in KEYS_REV:
             pyglet.clock.unschedule(on_tick)
             pyglet.clock.schedule_interval(on_tick, FAST_TICK, keyboard=keyboard)
-        if symbol == pyglet.window.key.F:
-            window.toggle_fullscreen()
 
     # This cannot be a loop over [presenter, audience] due to lexical scoping.
     presenter.window.set_handler(
