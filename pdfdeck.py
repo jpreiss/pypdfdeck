@@ -1,4 +1,5 @@
 import argparse
+from pathlib import Path
 import time
 
 import pdf2image
@@ -19,7 +20,10 @@ KEYS_REV = [
     pyglet.window.key.PAGEUP,
 ]
 
+# Redraw unconditionally every SLOW_TICK seconds. This allows us to avoid
+# making the main thread event-driven.
 SLOW_TICK = 0.5
+# Redraw much faster when animating a dissolve.
 FAST_TICK = 1.0 / 60
 
 COLOR_OK = (50, 100, 200, 255)
@@ -34,7 +38,7 @@ def PIL2pyglet(image):
     return pyglet.sprite.Sprite(image)
 
 
-def compute_image_height(doc_aspect, win_w, win_h, extras_ratio):
+def compute_image_height(doc_aspect, win_w, win_h, extras_ratio=0.0):
     """Computes the image height with optional space for extras.
 
     Args:
@@ -112,12 +116,72 @@ TIMER_MARGIN_BOTTOM_RATIO = 0.04
 HEIGHT_RATIOS = [1.0, TIMER_MARGIN_TOP_RATIO, TIMER_RATIO, TIMER_MARGIN_BOTTOM_RATIO]
 EXTRAS_RATIO = sum(HEIGHT_RATIOS[1:])
 # TODO: Add common monospace fonts to list. (Note: Sadly, Pyglet does not
-# appear to support any notion of "default monospaced font".
+# appear to support any notion of "default monospaced font".)
 FONTS = ("Monaco", "Inconsolata",)
 
 
+class VideoOverlays:
+    def __init__(self, window, pagepaths):
+        self.window = window
+        self.players = {}
+        self.page = None
+        self.blit_args = None
+        for page, path in pagepaths.items():
+            source = pyglet.media.load(path)
+            player = source.play()
+            player.loop = True
+            player.seek(0)
+            player.pause()
+            self.players[page] = player
+
+    def on_resize(self):
+        if self.page not in self.players:
+            return
+        player = self.players[self.page]
+        format = player.source.video_format
+        aspect = float(format.width) / format.height
+        win_w = self.window.width
+        win_h = self.window.height
+        h = compute_image_height(aspect, win_w, win_h)
+        w = aspect * h
+        if abs(h - win_h) < 1e-6:
+            blit_x = (win_w - w) / 2.0
+            blit_y = 0
+        if abs(w - win_w) < 1e-6:
+            blit_x = 0
+            blit_y = (win_h - h) / 2.0
+        else:
+            assert False, "bad video size calculations."
+        self.blit_args = (blit_x, blit_y, 0, w, h)
+
+    def draw_if_needed(self, page):
+        if page not in self.players:
+            # It's important to pause non-active players, because players
+            # automatically cause pyglet to raise the window's on_draw event
+            # repeatedly when playing. This will result in high power
+            # consumption.
+            for player in self.players.values():
+                player.pause()
+            self.page = None
+            return False
+
+        if self.page != page:
+            self.players[self.page].pause()
+            player = self.players[page]
+            print("Starting video:")
+            print(player.source.info)
+            player.seek(0)
+            player.play()
+            self.page = page
+            # Compute blit arguments.
+            self.on_resize()
+
+        self.players[self.page].texture.blit(*self.blit_args)
+        return True
+
+
 class Window:
-    def __init__(self, name, pdfpath, cursor, offset, timer=None):
+    def __init__(self, name, pdfpath, cursor, offset, timer=None, video_pagepaths={}):
         self.name = name
         self.cursor = cursor
         self.offset = offset
@@ -129,6 +193,7 @@ class Window:
         self.window.set_handler("on_close", self.on_close)
         self.ticks = 0
         self.timer = timer
+        self.video_overlays = VideoOverlays(self.window, video_pagepaths)
 
     # Event handlers.
     def on_resize(self, width, height):
@@ -140,6 +205,7 @@ class Window:
         )
         img_w = self.rasterizer.aspect * img_h
         self.rasterizer.push_resize(img_w, img_h)
+        self.video_overlays.on_resize()
 
     def on_draw(self):
         self.ticks += 1
@@ -148,6 +214,9 @@ class Window:
             self.cursor.prev_cursor + self.offset,
             self.cursor.cursor + self.offset,
         )
+        if self.video_overlays.draw_if_needed(indices[1]):
+            return
+
         sprites = [self._get_sprite(i) for i in indices]
         if None in sprites:
             self._draw_loading()
@@ -212,7 +281,6 @@ class Window:
         label.draw()
 
 
-
 def main():
     parser = argparse.ArgumentParser(description="PDF slide deck presenter.")
     parser.add_argument("path", type=str, help="PDF file path")
@@ -231,12 +299,30 @@ def main():
     args = parser.parse_args()
 
     info = pdf2image.pdfinfo_from_path(args.path)
+    print()
     print("PDF info:")
     for k, v in info.items():
         print(f"{k}: {v}")
+    print()
+
     npages = info["Pages"]
     if args.pages is not None:
         npages = min(npages, args.pages)
+
+    urls = pdf2image.pdfinfo_from_path(args.path, urls=True)
+    videos = {}
+    if len(urls) > 0:
+        root = Path(args.path).parent
+        for page, type, url in urls:
+            if url.startswith("file://"):
+                path = Path(url[7:])
+                if path.is_absolute():
+                    abspath = path
+                else:
+                    abspath = str(root / path)
+                print("found video URL", abspath)
+                videos[int(page) - 1] = abspath
+    print()
 
     cursor = Cursor(npages)
     if args.countdown is not None:
@@ -244,13 +330,14 @@ def main():
     else:
         timer = None
     presenter = Window("presenter", args.path, cursor, offset=1, timer=timer)
-    audience = Window("audience", args.path, cursor, offset=0)
+    audience = Window("audience", args.path, cursor, offset=0, video_pagepaths=videos)
 
     def on_tick(dt, keyboard):
         nonlocal cursor
         forward = any(keyboard[k] for k in KEYS_FWD)
         reverse = any(keyboard[k] for k in KEYS_REV)
-        if not cursor.tick(dt, reverse, forward):
+        fast = cursor.tick(dt, reverse, forward)
+        if not fast:
             pyglet.clock.unschedule(on_tick)
             # Slow tick so we draw after rasterizer is done.
             pyglet.clock.schedule_interval(on_tick, SLOW_TICK, keyboard=keyboard)
