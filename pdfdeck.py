@@ -215,8 +215,6 @@ class Window:
             self.cursor.prev_cursor + self.offset,
             self.cursor.cursor + self.offset,
         )
-        if self.video_overlays.draw_if_needed(indices[1]):
-            return
 
         sprites = [self._get_sprite(i) for i in indices]
         if None in sprites:
@@ -244,6 +242,31 @@ class Window:
             dy = pad + sum(heights[1:])
         else:
             dy = (self.window.height - sprites[0].height) // 2
+
+        # TODO: use polymorphism to treat video frames and sprite frames more
+        # uniformly. It should not be complex to have features like dissolve and timer
+        # work seamlessly between both frame types.
+
+        vid0 = indices[0] in self.video_overlays.players
+        vid1 = indices[1] in self.video_overlays.players
+
+        if vid0 and vid1:
+            self.video_overlays.draw_if_needed(indices[1])
+            return
+        if vid0 and self.cursor.blend() < 1:
+            self.video_overlays.draw_if_needed(indices[0])
+            sprites[1].opacity = int(255 * self.cursor.blend())
+            sprites[1].update(x=dx, y=dy)
+            sprites[1].draw()
+            return
+        if vid1:
+            self.video_overlays.draw_if_needed(indices[1])
+            sprites[0].opacity = int(255 * (1.0 - self.cursor.blend()))
+            sprites[0].update(x=dx, y=dy)
+            sprites[0].draw()
+            return
+
+        assert not self.video_overlays.draw_if_needed(indices[1])
         sprites[0].opacity = 255
         sprites[1].opacity = int(255 * self.cursor.blend())
         for s in sprites:
