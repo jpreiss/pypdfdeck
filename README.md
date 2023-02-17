@@ -15,6 +15,14 @@ The main features are:
 python3 pdfdeck.py ~/path/to/my_slides.pdf
 ```
 
+## Design
+
+We use the [`pdf2image`](https://github.com/Belval/pdf2image) library to rasterize PDFs.
+`pdf2image` is a Python wrapper around the [`Poppler`](https://poppler.freedesktop.org/) binaries.
+
+We use [`pyglet`](https://pyglet.org/) to draw graphics, interact with the window system, read the keyboard/mouse, and to load and play videos.
+Depending on the platform, `pyglet` might also require `ffmpeg` for video functionality (experimental, on branch `video` for now).
+
 ## Related work
 
 There are many similar projects:
