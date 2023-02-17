@@ -148,7 +148,7 @@ class VideoOverlays:
         if abs(h - win_h) < 1e-6:
             blit_x = (win_w - w) / 2.0
             blit_y = 0
-        if abs(w - win_w) < 1e-6:
+        elif abs(w - win_w) < 1e-6:
             blit_x = 0
             blit_y = (win_h - h) / 2.0
         else:
