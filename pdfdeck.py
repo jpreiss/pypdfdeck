@@ -217,7 +217,7 @@ class Window:
     # Event handlers.
     def on_resize(self, width, height):
         if self.timer is not None:
-            self.img_h = height / (1 + EXTRAS_RATIO)
+            self.img_h = int(height / (1 + EXTRAS_RATIO))
         else:
             self.img_h = height
         _, _, scale = boxfill_centered(self.rasterizer.aspect, 1, width, self.img_h)
@@ -240,23 +240,9 @@ class Window:
             self.loading_label.draw()
             return pyglet.event.EVENT_HANDLED
 
-        if self.timer is not None:
-            heights = [r * self.img_h for r in HEIGHT_RATIOS]
-            fontsize = PIX2FONT * heights[2]
-            content_height = sum(heights)
-            pad = (self.window.height - content_height) / 2
-            label = self.timer.label(
-                fontsize=fontsize,
-                x=self.window.width//2,
-                y=pad+heights[-1],
-            )
-            # Defer drawing until end, so it's on top of letterboxes.
-            y0 = sum(heights[1:])
-        else:
-            y0 = 0
-
         box_w = self.window.width
         box_h = self.img_h
+        y0 = self.window.height - self.img_h
 
         # Layout calculations. The letterbox placement for frames[0] will be
         # overwritten by those for frames[1], but it keeps the code simple.
@@ -296,6 +282,15 @@ class Window:
             b.draw()
 
         if self.timer is not None:
+            heights = [r * self.img_h for r in HEIGHT_RATIOS]
+            fontsize = PIX2FONT * heights[2]
+            content_height = sum(heights)
+            pad = (self.window.height - content_height) / 2
+            label = self.timer.label(
+                fontsize=fontsize,
+                x=self.window.width//2,
+                y=pad+heights[-1],
+            )
             label.draw()
 
         return pyglet.event.EVENT_HANDLED
