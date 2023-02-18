@@ -43,8 +43,14 @@ class TimerDisplay:
     def __init__(self, duration_secs):
         self.duration = duration_secs
         self.started = None
+        self._label = pyglet.text.Label(
+            "",
+            font_name=FONTS,
+            anchor_x="center",
+            anchor_y="baseline",
+        )
 
-    def label(self, **kwargs):
+    def label(self, fontsize, x, y):
         """Returns a colored text label showing the time remaining.
 
         Args:
@@ -66,12 +72,12 @@ class TimerDisplay:
             s = "-" + s + " "
         else:
             color = COLOR_OK
-        label = pyglet.text.Label(
-            s,
-            color=color,
-            **kwargs,
-        )
-        return label
+        self._label.font_size = fontsize
+        self._label.x = x
+        self._label.y = y
+        self._label.text = s
+        self._label.color = color
+        return self._label
 
 
 def pix2font():
@@ -226,12 +232,9 @@ class Window:
             content_height = sum(heights)
             pad = (self.window.height - content_height) / 2
             label = self.timer.label(
-                font_name=FONTS,
-                font_size=fontsize,
+                fontsize=fontsize,
                 x=self.window.width//2,
                 y=pad+heights[-1],
-                anchor_x="center",
-                anchor_y="baseline",
             )
             # Defer drawing until end, so it's on top of letterboxes.
             y0 = sum(heights[1:])
