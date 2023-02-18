@@ -227,9 +227,14 @@ class Window:
             self.cursor.prev_cursor + self.offset,
             self.cursor.cursor + self.offset,
         )
+        frames = [self.frames[i] for i in indices]
 
-        if not all(self.frames[i].ready() for i in indices):
-            self._draw_loading()
+        if not all(f.ready() for f in frames):
+            k = self.ticks % 4
+            self.loading_label.text = "".join((" " * k, "Rasterizing", "." * k))
+            self.loading_label.x = self.window.width // 2
+            self.loading_label.y = self.window.height // 2
+            self.loading_label.draw()
             return pyglet.event.EVENT_HANDLED
 
         if self.timer is not None:
@@ -247,7 +252,6 @@ class Window:
         else:
             y0 = 0
 
-        frames = [self.frames[i] for i in indices]
         box_w = self.window.width
         box_h = self.img_h
 
@@ -300,12 +304,6 @@ class Window:
     def _timer_height_factor(self):
         return EXTRAS_RATIO if self.timer is not None else 0.0
 
-    def _draw_loading(self):
-        k = self.ticks % 4
-        self.loading_label.text = "".join((" " * k, "Rasterizing", "." * k))
-        self.loading_label.x = self.window.width // 2
-        self.loading_label.y = self.window.height // 2
-        self.loading_label.draw()
 
 
 def main():
