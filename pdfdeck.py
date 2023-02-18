@@ -26,6 +26,7 @@ SLOW_TICK = 0.5
 # Redraw much faster when animating a dissolve.
 FAST_TICK = 1.0 / 60
 
+# Text colors for the timer in the presenter view.
 COLOR_OK = (50, 100, 200, 255)
 COLOR_OVERTIME = (200, 50, 50, 255)
 
@@ -101,6 +102,7 @@ FONTS = ("Monaco", "Inconsolata",)
 
 
 def boxfill_centered(w, h, box_w, box_h):
+    """Coordinates and scale to make box(w, h) fit inside box(box_w, box_h)."""
     scale_h = box_h / h
     scale_w = box_w / w
     if scale_h < scale_w:
@@ -112,6 +114,7 @@ def boxfill_centered(w, h, box_w, box_h):
 
 
 class VideoFrame:
+    """Polymorphic class for video player frame."""
     def __init__(self, videopath):
         self.name = videopath
         source = pyglet.media.load(videopath)
@@ -148,6 +151,7 @@ class VideoFrame:
 
 
 class PDFFrame:
+    """Polymorphic class for rasterized PDF page frame."""
     def __init__(self, rasterizer, index):
         self.rasterizer = rasterizer
         self.index = index
@@ -214,7 +218,6 @@ class Window:
             anchor_x="center",
         )
 
-    # Event handlers.
     def on_resize(self, width, height):
         if self.timer is not None:
             self.img_h = int(height / (1 + EXTRAS_RATIO))
@@ -232,6 +235,7 @@ class Window:
         )
         frames = [self.frames[i] for i in indices]
 
+        # Draw "spinner" and bail out early if there's nothing to draw.
         if not all(f.ready() for f in frames):
             k = self.ticks % 4
             self.loading_label.text = "".join((" " * k, "Rasterizing", "." * k))
@@ -240,12 +244,13 @@ class Window:
             self.loading_label.draw()
             return pyglet.event.EVENT_HANDLED
 
+        # Begin layout calculations.
         box_w = self.window.width
         box_h = self.img_h
         y0 = self.window.height - self.img_h
 
-        # Layout calculations. The letterbox placement for frames[0] will be
-        # overwritten by those for frames[1], but it keeps the code simple.
+        # The letterbox placement for frames[0] will be overwritten by those
+        # for frames[1], but it keeps the code simple.
         scales = [None, None]
         positions = [None, None]
         for i in range(2):
@@ -268,6 +273,7 @@ class Window:
                 self.letterboxes[0].position = (0, 0)
                 self.letterboxes[1].position = (0, positions[i][1] + scale)
 
+        # Transitions: dissolve and start/stop of videos.
         blend = self.cursor.blend()
         if blend < 1:
             frames[0].draw(*positions[0], scales[0], opacity=0xFF)
