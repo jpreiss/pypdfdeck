@@ -1,4 +1,5 @@
 import argparse
+import functools
 from pathlib import Path
 import time
 
@@ -357,10 +358,10 @@ def main():
             # Slow tick so we draw after rasterizer is done.
             pyglet.clock.schedule_interval(on_tick, SLOW_TICK, keyboard=keyboard)
 
-    # Tick slowly except when we are updating the screen - which always begins
-    # with a key press. on_tick will slow itself back down later.
     def on_key_press(window, symbol, modifiers):
         if symbol in KEYS_FWD or symbol in KEYS_REV:
+            # Tick slowly except when updating the screen - which always begins
+            # with a key press. on_tick will slow itself back down later.
             pyglet.clock.unschedule(on_tick)
             pyglet.clock.schedule_interval(on_tick, FAST_TICK, keyboard=keyboard)
             return pyglet.event.EVENT_HANDLED
@@ -370,10 +371,8 @@ def main():
             return pyglet.event.EVENT_HANDLED
 
     # This cannot be a loop over [presenter, audience] due to lexical scoping.
-    presenter.window.set_handler(
-        "on_key_press", lambda sym, mod: on_key_press(presenter, sym, mod))
-    audience.window.set_handler(
-        "on_key_press", lambda sym, mod: on_key_press(audience, sym, mod))
+    for win in [presenter, audience]:
+        win.window.set_handler("on_key_press", functools.partial(on_key_press, win))
 
     keyboard = pyglet.window.key.KeyStateHandler()
     presenter.window.push_handlers(keyboard)
