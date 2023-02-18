@@ -370,13 +370,11 @@ def main():
             # Pyglet always uses it to close the window.
             return pyglet.event.EVENT_HANDLED
 
-    # This cannot be a loop over [presenter, audience] due to lexical scoping.
+    keyboard = pyglet.window.key.KeyStateHandler()
     for win in [presenter, audience]:
         win.window.set_handler("on_key_press", functools.partial(on_key_press, win))
+        win.window.push_handlers(keyboard)
 
-    keyboard = pyglet.window.key.KeyStateHandler()
-    presenter.window.push_handlers(keyboard)
-    audience.window.push_handlers(keyboard)
     pyglet.clock.schedule_interval(on_tick, SLOW_TICK, keyboard=keyboard)
 
     # Main loop.
