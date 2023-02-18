@@ -93,7 +93,7 @@ def pix2font():
 PIX2FONT = pix2font()
 TIMER_MARGIN_TOP_RATIO = 0.0
 TIMER_RATIO = 0.17
-TIMER_MARGIN_BOTTOM_RATIO = 0.04
+TIMER_MARGIN_BOTTOM_RATIO = 0.02
 HEIGHT_RATIOS = [1.0, TIMER_MARGIN_TOP_RATIO, TIMER_RATIO, TIMER_MARGIN_BOTTOM_RATIO]
 EXTRAS_RATIO = sum(HEIGHT_RATIOS[1:])
 # TODO: Add common monospace fonts to list. (Note: Sadly, Pyglet does not
@@ -290,12 +290,10 @@ class Window:
         if self.timer is not None:
             heights = [r * self.img_h for r in HEIGHT_RATIOS]
             fontsize = PIX2FONT * heights[2]
-            content_height = sum(heights)
-            pad = (self.window.height - content_height) / 2
             label = self.timer.label(
                 fontsize=fontsize,
                 x=self.window.width//2,
-                y=pad+heights[-1],
+                y=heights[-1],
             )
             label.draw()
 
