@@ -212,6 +212,10 @@ class Window:
                 self.frames.append(PDFFrame(self.rasterizer, i))
         # Rasterizer will give us a black image for end slide.
         self.frames.append(PDFFrame(self.rasterizer, cursor.nslides))
+        self.letterboxes = [
+            pyglet.shapes.Rectangle(0, 0, 0, 0, color=(0, 0, 0))
+            for _ in range(2)
+        ]
 
     # Event handlers.
     def on_resize(self, width, height):
@@ -250,7 +254,7 @@ class Window:
                 anchor_x="center",
                 anchor_y="baseline",
             )
-            label.draw()
+            # Defer drawing until end, so it's on top of letterboxes.
             y0 = sum(heights[1:])
         else:
             y0 = 0
@@ -259,7 +263,8 @@ class Window:
         box_w = self.window.width
         box_h = self.img_h
 
-        # Layout calculations.
+        # Layout calculations. The letterbox placement for frames[0] will be
+        # overwritten by those for frames[1], but it keeps the code simple.
         scales = [None, None]
         positions = [None, None]
         for i in range(2):
@@ -268,11 +273,22 @@ class Window:
             if scale_h < scale_w:
                 # Height-limited.
                 scales[i] = scale_h
-                positions[i] = (int((box_w - scale_h * frames[i].aspect) / 2), y0)
+                img_w = scale_h * frames[i].aspect
+                positions[i] = (int((box_w - img_w) / 2), y0)
+                for b in self.letterboxes:
+                    b.height = box_h
+                    b.width = positions[i][0]
+                self.letterboxes[0].position = (0, 0)
+                self.letterboxes[1].position = (positions[i][0] + img_w, 0)
             else:
                 # Width-limited.
                 scales[i] = scale_w
                 positions[i] = (0, int(y0 + (box_h - scale_w) / 2))
+                for b in self.letterboxes:
+                    b.width = box_w
+                    b.height = positions[i][1]
+                self.letterboxes[0].position = (0, 0)
+                self.letterboxes[1].position = (0, positions[i][1] + scale_w)
 
         blend = self.cursor.blend()
         if blend < 1:
@@ -281,7 +297,14 @@ class Window:
         else:
             frames[1].foreground()
             frames[0].hide()
-        frames[1].draw(*positions[1], scales[1], opacity=int(0xFF * blend))
+        opacity = int(0xFF * blend)
+        frames[1].draw(*positions[1], scales[1], opacity=opacity)
+        for b in self.letterboxes:
+            b.opacity = opacity
+            b.draw()
+
+        if self.timer is not None:
+            label.draw()
 
         return pyglet.event.EVENT_HANDLED
 
