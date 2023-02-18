@@ -51,12 +51,8 @@ class TimerDisplay:
             anchor_y="baseline",
         )
 
-    def label(self, fontsize, x, y):
-        """Returns a colored text label showing the time remaining.
-
-        Args:
-            **kwargs: Forwarded to pyglet.text.Label constructor.
-        """
+    def draw(self, fontsize, x, y):
+        """Draws a colored text label showing the time remaining."""
         if self.started is None:
             # TODO: Is this definitely the best clock? We want monotonicity but
             # low drift is also important.
@@ -78,7 +74,7 @@ class TimerDisplay:
         self._label.y = y
         self._label.text = s
         self._label.color = color
-        return self._label
+        self._label.draw()
 
 
 def pix2font():
@@ -290,12 +286,9 @@ class Window:
         if self.timer is not None:
             heights = [r * self.img_h for r in HEIGHT_RATIOS]
             fontsize = PIX2FONT * heights[2]
-            label = self.timer.label(
-                fontsize=fontsize,
-                x=self.window.width//2,
-                y=heights[-1],
-            )
-            label.draw()
+            x = self.window.width // 2
+            y = heights[-1]
+            self.timer.draw(fontsize=fontsize, x=x, y=y)
 
         return pyglet.event.EVENT_HANDLED
 
