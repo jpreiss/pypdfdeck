@@ -120,65 +120,76 @@ EXTRAS_RATIO = sum(HEIGHT_RATIOS[1:])
 FONTS = ("Monaco", "Inconsolata",)
 
 
-class VideoOverlays:
-    def __init__(self, window, pagepaths):
-        self.window = window
-        self.players = {}
-        self.page = None
-        self.blit_args = None
-        for page, path in pagepaths.items():
-            source = pyglet.media.load(path)
-            player = source.play()
-            player.loop = True
-            player.seek(0)
-            player.pause()
-            player.monkeypatch_name = path
-            self.players[page] = player
+class VideoFrame:
+    def __init__(self, videopath):
+        self.name = videopath
+        source = pyglet.media.load(videopath)
+        # TODO: Is there a less verbose way to get to time 0 and paused?
+        player = source.play()
+        player.loop = True
+        player.pause()
+        player.seek(0)
+        format = source.video_format
+        self.aspect = float(format.width) / format.height
+        self.player = player
+        self.sprite = pyglet.sprite.Sprite(self.player.texture)
 
-    def on_resize(self):
-        if self.page not in self.players:
-            return
-        player = self.players[self.page]
-        format = player.source.video_format
-        aspect = float(format.width) / format.height
-        win_w = self.window.width
-        win_h = self.window.height
-        h = compute_image_height(aspect, win_w, win_h)
-        w = aspect * h
-        if abs(h - win_h) < 1e-6:
-            blit_x = (win_w - w) / 2.0
-            blit_y = 0
-        elif abs(w - win_w) < 1e-6:
-            blit_x = 0
-            blit_y = (win_h - h) / 2.0
-        else:
-            assert False, "bad video size calculations."
-        self.blit_args = (blit_x, blit_y, 0, w, h)
-
-    def draw_if_needed(self, page):
-        if page not in self.players:
-            # It's important to pause non-active players, because players
-            # automatically cause pyglet to raise the window's on_draw event
-            # repeatedly when playing. This will result in high power
-            # consumption.
-            for player in self.players.values():
-                player.pause()
-            self.page = None
-            return False
-
-        if self.page != page:
-            if self.page is not None:
-                self.players[self.page].pause()
-            player = self.players[page]
-            print("Starting video", player.monkeypatch_name)
-            player.seek(0)
-            player.play()
-            self.page = page
-            # Compute blit arguments.
-            self.on_resize()
-
-        self.players[self.page].texture.blit(*self.blit_args)
+    def ready(self):
         return True
+
+    def reveal(self):
+        self.player.seek(0)
+
+    def foreground(self):
+        if not self.player.playing:
+            self.player.play()
+
+    def hide(self):
+        self.player.pause()
+
+    def draw(self, x, y, scale, opacity):
+        self.sprite._set_texture(self.player.texture)
+        scale = scale / self.player.texture.height
+        self.sprite.scale = scale
+        self.sprite.update(x=x, y=y)
+        self.sprite.opacity = opacity
+        self.sprite.draw()
+
+
+class PDFFrame:
+    def __init__(self, rasterizer, index):
+        self.rasterizer = rasterizer
+        self.index = index
+        self.sprite = None
+
+    @property
+    def aspect(self):
+        return self.rasterizer.aspect
+
+    def ready(self):
+        return self.rasterizer.get(self.index) is not None
+
+    def reveal(self):
+        pass
+
+    def foreground(self):
+        pass
+
+    def hide(self):
+        pass
+
+    def draw(self, x, y, scale, opacity):
+        image = self.rasterizer.get(self.index)
+        if self.sprite is None or (self.sprite.width, self.sprite.height) != image.size:
+            self.sprite = PIL2pyglet(image)
+        # Snap to pixel-perfection.
+        scale = scale / self.sprite.height
+        if abs(scale - 1) < 1e-2:
+            scale = 1
+        self.sprite.scale = scale
+        self.sprite.update(x=x, y=y)
+        self.sprite.opacity = opacity
+        self.sprite.draw()
 
 
 class Window:
@@ -187,26 +198,32 @@ class Window:
         self.cursor = cursor
         self.offset = offset
         self.rasterizer = ThreadedRasterizer(pdfpath, pagelimit=cursor.nslides)
-        self.sprites = [None] * (cursor.nslides + 2)
         self.window = pyglet.window.Window(caption=name, resizable=True)
         self.window.set_handler("on_resize", self.on_resize)
         self.window.set_handler("on_draw", self.on_draw)
         self.window.set_handler("on_close", self.on_close)
         self.ticks = 0
         self.timer = timer
-        self.video_overlays = VideoOverlays(self.window, video_pagepaths)
+        self.frames = []
+        for i in range(cursor.nslides):
+            if i in video_pagepaths:
+                self.frames.append(VideoFrame(video_pagepaths[i]))
+            else:
+                self.frames.append(PDFFrame(self.rasterizer, i))
+        # Rasterizer will give us a black image for end slide.
+        self.frames.append(PDFFrame(self.rasterizer, cursor.nslides))
 
     # Event handlers.
     def on_resize(self, width, height):
-        img_h = compute_image_height(
+        self.img_h = height / (1 + self._timer_height_factor())
+        raster_h = compute_image_height(
             self.rasterizer.aspect,
             width,
             height,
             self._timer_height_factor()
         )
-        img_w = self.rasterizer.aspect * img_h
-        self.rasterizer.push_resize(img_w, img_h)
-        self.video_overlays.on_resize()
+        raster_w = self.rasterizer.aspect * raster_h
+        self.rasterizer.push_resize(raster_w, raster_h)
 
     def on_draw(self):
         self.ticks += 1
@@ -216,17 +233,12 @@ class Window:
             self.cursor.cursor + self.offset,
         )
 
-        sprites = [self._get_sprite(i) for i in indices]
-        if None in sprites:
+        if not all(self.frames[i].ready() for i in indices):
             self._draw_loading()
             return pyglet.event.EVENT_HANDLED
-        # TODO: Double-check that we are doing integer and floating point
-        # division in the right places.
-        # TODO: Move Pyglet-independent code into layout functions or class.
-        dx = (self.window.width - sprites[0].width) // 2
+
         if self.timer is not None:
-            img_h = sprites[0].height
-            heights = [r * img_h for r in HEIGHT_RATIOS]
+            heights = [r * self.img_h for r in HEIGHT_RATIOS]
             fontsize = PIX2FONT * heights[2]
             content_height = sum(heights)
             pad = (self.window.height - content_height) / 2
@@ -239,39 +251,38 @@ class Window:
                 anchor_y="baseline",
             )
             label.draw()
-            dy = pad + sum(heights[1:])
+            y0 = sum(heights[1:])
         else:
-            dy = (self.window.height - sprites[0].height) // 2
+            y0 = 0
 
-        # TODO: use polymorphism to treat video frames and sprite frames more
-        # uniformly. It should not be complex to have features like dissolve and timer
-        # work seamlessly between both frame types.
+        frames = [self.frames[i] for i in indices]
+        box_w = self.window.width
+        box_h = self.img_h
 
-        vid0 = indices[0] in self.video_overlays.players
-        vid1 = indices[1] in self.video_overlays.players
+        # Layout calculations.
+        scales = [None, None]
+        positions = [None, None]
+        for i in range(2):
+            scale_h = box_h
+            scale_w = box_w / frames[i].aspect
+            if scale_h < scale_w:
+                # Height-limited.
+                scales[i] = scale_h
+                positions[i] = (int((box_w - scale_h * frames[i].aspect) / 2), y0)
+            else:
+                # Width-limited.
+                scales[i] = scale_w
+                positions[i] = (0, int(y0 + (box_h - scale_w) / 2))
 
-        if vid0 and vid1:
-            self.video_overlays.draw_if_needed(indices[1])
-            return
-        if vid0 and self.cursor.blend() < 1:
-            self.video_overlays.draw_if_needed(indices[0])
-            sprites[1].opacity = int(255 * self.cursor.blend())
-            sprites[1].update(x=dx, y=dy)
-            sprites[1].draw()
-            return
-        if vid1:
-            self.video_overlays.draw_if_needed(indices[1])
-            sprites[0].opacity = int(255 * (1.0 - self.cursor.blend()))
-            sprites[0].update(x=dx, y=dy)
-            sprites[0].draw()
-            return
+        blend = self.cursor.blend()
+        if blend < 1:
+            frames[0].draw(*positions[0], scales[0], opacity=0xFF)
+            frames[1].reveal()
+        else:
+            frames[1].foreground()
+            frames[0].hide()
+        frames[1].draw(*positions[1], scales[1], opacity=int(0xFF * blend))
 
-        assert not self.video_overlays.draw_if_needed(indices[1])
-        sprites[0].opacity = 255
-        sprites[1].opacity = int(255 * self.cursor.blend())
-        for s in sprites:
-            s.update(x=dx, y=dy)
-            s.draw()
         return pyglet.event.EVENT_HANDLED
 
     def on_close(self):
@@ -280,16 +291,6 @@ class Window:
     # Private methods.
     def _timer_height_factor(self):
         return EXTRAS_RATIO if self.timer is not None else 0.0
-
-    def _get_sprite(self, index):
-        image = self.rasterizer.get(index)
-        if image is None:
-            return None
-        sprite = self.sprites[index + 1]
-        if sprite is None or (sprite.width, sprite.height) != image.size:
-            sprite = PIL2pyglet(image)
-            self.sprites[index + 1] = sprite
-        return sprite
 
     def _draw_loading(self):
         k = self.ticks % 4
@@ -353,7 +354,7 @@ def main():
         timer = TimerDisplay(args.countdown * 60)
     else:
         timer = None
-    presenter = Window("presenter", args.path, cursor, offset=1, timer=timer)
+    presenter = Window("presenter", args.path, cursor, offset=1, timer=timer, video_pagepaths=videos)
     audience = Window("audience", args.path, cursor, offset=0, video_pagepaths=videos)
 
     def on_tick(dt, keyboard):
