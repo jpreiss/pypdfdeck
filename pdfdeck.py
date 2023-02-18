@@ -216,7 +216,10 @@ class Window:
 
     # Event handlers.
     def on_resize(self, width, height):
-        self.img_h = height / (1 + self._timer_height_factor())
+        if self.timer is not None:
+            self.img_h = height / (1 + EXTRAS_RATIO)
+        else:
+            self.img_h = height
         _, _, scale = boxfill_centered(self.rasterizer.aspect, 1, width, self.img_h)
         self.rasterizer.push_resize(int(scale * self.rasterizer.aspect), int(scale))
 
@@ -299,11 +302,6 @@ class Window:
 
     def on_close(self):
         self.rasterizer.shutdown()
-
-    # Private methods.
-    def _timer_height_factor(self):
-        return EXTRAS_RATIO if self.timer is not None else 0.0
-
 
 
 def main():
