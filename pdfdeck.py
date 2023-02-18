@@ -207,6 +207,12 @@ class Window:
             pyglet.shapes.Rectangle(0, 0, 0, 0, color=(0, 0, 0))
             for _ in range(2)
         ]
+        self.loading_label = pyglet.text.Label(
+            "",
+            font_name=FONTS,
+            font_size=24,
+            anchor_x="center",
+        )
 
     # Event handlers.
     def on_resize(self, width, height):
@@ -296,16 +302,10 @@ class Window:
 
     def _draw_loading(self):
         k = self.ticks % 4
-        text = "".join((" " * k, "Rasterizing", "." * k))
-        label = pyglet.text.Label(
-            text,
-            font_name=FONTS,
-            font_size=24,
-            x=self.window.width//2,
-            y=self.window.height//2,
-            anchor_x="center",
-        )
-        label.draw()
+        self.loading_label.text = "".join((" " * k, "Rasterizing", "." * k))
+        self.loading_label.x = self.window.width // 2
+        self.loading_label.y = self.window.height // 2
+        self.loading_label.draw()
 
 
 def main():
