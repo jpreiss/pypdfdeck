@@ -38,32 +38,6 @@ def PIL2pyglet(image):
     return pyglet.sprite.Sprite(image)
 
 
-def compute_image_height(doc_aspect, win_w, win_h, extras_ratio=0.0):
-    """Computes the image height with optional space for extras.
-
-    Args:
-        doc_aspect: The aspect ratio of the document.
-        win_w: The width of the window.
-        win_h: The height of the window.
-        extras_ratio: The desired ratio (extras height) / (image height).
-
-    Returs:
-        img_h: Height of the image such the image and extra vertical space of
-          extras_ratio * img_h fit within the window.
-    """
-    win_aspect = win_w / win_h
-    content_aspect = doc_aspect / (1.0 + extras_ratio)
-    if win_aspect < content_aspect:
-        # Tall window - pad.
-        content_h = win_w / content_aspect
-    else:
-        # Wide window - tight fit.
-        content_h = win_h
-    # solve img_h + extras_ratio * img_h = content_h
-    img_h = content_h / (1.0 + extras_ratio)
-    return img_h
-
-
 class TimerDisplay:
     """Timing code and text output for countdown timer."""
     def __init__(self, duration_secs):
@@ -118,6 +92,17 @@ EXTRAS_RATIO = sum(HEIGHT_RATIOS[1:])
 # TODO: Add common monospace fonts to list. (Note: Sadly, Pyglet does not
 # appear to support any notion of "default monospaced font".)
 FONTS = ("Monaco", "Inconsolata",)
+
+
+def boxfill_centered(w, h, box_w, box_h):
+    scale_h = box_h / h
+    scale_w = box_w / w
+    if scale_h < scale_w:
+        # Height-limited.
+        return (box_w - scale_h * w) / 2, 0, scale_h
+    else:
+        # Width-limited.
+        return 0, (box_h - scale_w * h) / 2, scale_w
 
 
 class VideoFrame:
@@ -220,14 +205,8 @@ class Window:
     # Event handlers.
     def on_resize(self, width, height):
         self.img_h = height / (1 + self._timer_height_factor())
-        raster_h = compute_image_height(
-            self.rasterizer.aspect,
-            width,
-            height,
-            self._timer_height_factor()
-        )
-        raster_w = self.rasterizer.aspect * raster_h
-        self.rasterizer.push_resize(raster_w, raster_h)
+        _, _, scale = boxfill_centered(self.rasterizer.aspect, 1, width, self.img_h)
+        self.rasterizer.push_resize(int(scale * self.rasterizer.aspect), int(scale))
 
     def on_draw(self):
         self.ticks += 1
@@ -268,13 +247,12 @@ class Window:
         scales = [None, None]
         positions = [None, None]
         for i in range(2):
-            scale_h = box_h
-            scale_w = box_w / frames[i].aspect
-            if scale_h < scale_w:
+            x, y, scale = boxfill_centered(frames[i].aspect, 1, box_w, box_h)
+            positions[i] = (int(x), int(y + y0))
+            scales[i] = scale
+            if x > 0:
                 # Height-limited.
-                scales[i] = scale_h
-                img_w = scale_h * frames[i].aspect
-                positions[i] = (int((box_w - img_w) / 2), y0)
+                img_w = scale * frames[i].aspect
                 for b in self.letterboxes:
                     b.height = box_h
                     b.width = positions[i][0]
@@ -282,13 +260,11 @@ class Window:
                 self.letterboxes[1].position = (positions[i][0] + img_w, 0)
             else:
                 # Width-limited.
-                scales[i] = scale_w
-                positions[i] = (0, int(y0 + (box_h - scale_w) / 2))
                 for b in self.letterboxes:
                     b.width = box_w
                     b.height = positions[i][1]
                 self.letterboxes[0].position = (0, 0)
-                self.letterboxes[1].position = (0, positions[i][1] + scale_w)
+                self.letterboxes[1].position = (0, positions[i][1] + scale)
 
         blend = self.cursor.blend()
         if blend < 1:
